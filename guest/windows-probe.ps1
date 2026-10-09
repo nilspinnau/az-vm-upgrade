@@ -81,6 +81,7 @@ $guest = @{
     accelerationInUse = $acceleration; manaInUse = $manaTraffic
     manaDeviceCount = $manaPresent.Count
     manaDevicePresent = @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -match '^PCI\\VEN_1414&DEV_00BA&' }).Count -gt 0
+    bootId = $os.LastBootUpTime.ToUniversalTime().ToString('o')
     diskCount = $disks.Count
     pageFiles = @($pageFiles | ForEach-Object { $_.Name }); limitations = 'Absent non-present drivers are unknown; supplied workload review must exclude third-party storage filters.'
 }

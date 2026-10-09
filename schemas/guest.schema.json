@@ -22,7 +22,8 @@
     "accelerationInUse": {"enum": ["pass", "unknown", "failed"]},
     "manaInUse": {"enum": ["pass", "unknown", "failed"]},
     "azureVmUtils": {"enum": ["pass", "unknown", "failed"]},
-    "manaDevicePresent": {"type": "boolean"}
+    "manaDevicePresent": {"type": "boolean"},
+    "bootId": {"type": "string", "minLength": 8, "maxLength": 64}
   },
   "additionalProperties": true
 }

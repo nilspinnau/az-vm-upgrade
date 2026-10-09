@@ -54,7 +54,7 @@ function Get-UpgradeHash {
 }
 
 function Test-UpgradeDocument {
-    param([Parameter(Mandatory)]$Document, [Parameter(Mandatory)][ValidateSet('evidence','plan','approval','acceptance','journal','guest','inventory')][string]$Kind)
+    param([Parameter(Mandatory)]$Document, [Parameter(Mandatory)][ValidateSet('evidence','plan','approval','acceptance','journal','guest','inventory','preparation','preparation-manifest')][string]$Kind)
     $schema = Join-Path $script:RepositoryRoot "schemas\$Kind.schema.json"
     $json = $Document | ConvertTo-Json -Depth 100
     if (-not (Test-Json -Json $json -SchemaFile $schema -ErrorAction Stop)) {

@@ -45,3 +45,17 @@ them. See [nvme-backend.md](nvme-backend.md). External Azure
 CLI, Terraform, provider and PowerShell test dependencies retain their own
 licenses and are not redistributed as binaries. Redistribution/publication
 must still be reviewed for any future third-party additions and customer data.
+
+## Native guest preparation sources (verified 2026-10-09)
+
+- Ubuntu package archive pages (packages.ubuntu.com) list `azure-vm-utils`
+  `0.6.0-4~ubuntu0.22.04.1` (jammy-updates) and `0.6.0-4~ubuntu0.24.04.1`
+  (noble-updates); these exact versions are the only automated channel in
+  `catalog/preparation.json`. Other distributions remain manual.
+- The initramfs `nvme`/`nvme_core` staging, `io_timeout` and Windows
+  `stornvme`/`vpci` boot-start procedures follow the MIT-licensed
+  Azure/SAP-on-Azure-Scripts-and-Utilities procedures (commit pinned in
+  `catalog/backends.json`) and are re-implemented with bounded backups; no
+  upstream code is vendored and the full conversion script is never nested.
+- The Windows MANA driver link is a mutable redirect, so only an
+  operator-supplied, hash- and signature-verified package is accepted.

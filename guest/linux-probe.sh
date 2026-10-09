@@ -122,12 +122,13 @@ probe = {
     "storageIdentityHash": storage_hash, "sentinelHash": sentinel_hash,
     "applicationHealth": health_status, "accelerationInUse": acceleration, "manaInUse": mana_in_use,
     "azureVmUtils": vm_utils, "manaDevicePresent": mana_pci,
+    "bootId": pathlib.Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
     "diskCount": sum(item["type"] == "disk" for item in all_devices),
     "swapCount": len(swap_lines), "interfaces": [{"name": n, "driver": d} for n, (d, _, _) in sorted(interfaces.items())][:8],
     "limitations": "No application secrets/configuration dumps; no package changes; idle VF traffic is unknown, not a pass."
 }
 text = json.dumps(probe, separators=(",", ":"))
-if len(text.encode()) > 3500:
+if len(text.encode()) > 3700:
     raise RuntimeError("Evidence exceeds Run Command output budget")
 print("AZVM_EVIDENCE_BEGIN\n" + text + "\nAZVM_EVIDENCE_END")
 PY

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "preparation-catalog/1.0",
+  "verifiedOn": "2026-10-09",
+  "profiles": {
+    "ubuntu": {
+      "osProfiles": ["ubuntu:22.04:x86_64", "ubuntu:24.04:x86_64"],
+      "script": "guest/prepare-ubuntu-nvme.sh",
+      "components": ["nvme-boot", "azure-vm-utils", "mana-linux-check"]
+    },
+    "windows": {
+      "osProfiles": ["windows:20348:AMD64"],
+      "script": "guest/prepare-windows-nvme.ps1",
+      "components": ["nvme-boot", "mana-windows-driver"]
+    }
+  },
+  "azureVmUtils": {
+    "channel": "Ubuntu archive package azure-vm-utils (apt-signed)",
+    "evidence": "https://packages.ubuntu.com/search?keywords=azure-vm-utils&searchon=names&suite=all&section=all",
+    "license": "MIT",
+    "approvedVersions": {
+      "ubuntu:22.04": "0.6.0-4~ubuntu0.22.04.1",
+      "ubuntu:24.04": "0.6.0-4~ubuntu0.24.04.1"
+    },
+    "notes": "Other versions or distributions are manual status. Source tag v0.7.0 is pinned in backends.json for review only and is never built by the toolkit."
+  },
+  "manaLinux": {
+    "automation": "detect-only",
+    "reason": "Support depends on the distribution kernel build and backports; kernel upgrades are not automated and kernel version alone is not used as proof."
+  },
+  "manaWindows": {
+    "automation": "operator-supplied-artifact",
+    "documentedEntryPoint": "https://aka.ms/manawindowsdrivers",
+    "pinnable": false,
+    "reason": "The entry point is a mutable redirect with no published hash policy. The operator downloads, reviews and binds a zip SHA256; the guest verifies hash, Authenticode (Microsoft signer) and exactly one INF matching PCI VEN_1414&DEV_00BA.",
+    "maxArtifactBytes": 314572800
+  },
+  "limits": {
+    "maxPlanAgeMinutes": 60,
+    "maxGuestEvidenceAgeMinutes": 30,
+    "reboot": "Separate consent; restart only (no deallocate, resize or start-stop sequence)."
+  }
+}

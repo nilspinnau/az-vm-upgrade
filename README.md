@@ -77,7 +77,7 @@ To omit Terraform checks, use `-SkipTerraform`; guest syntax checks still requir
 - [Permissions and privacy](docs/permissions.md)
 - [Discovery, lifecycle and Advisor coverage](docs/discovery.md)
 - [Target compatibility and quota arithmetic](docs/planning.md)
-- [Guest preparation](docs/guest-preparation.md)
+- [Guest preparation: plan-bound NVMe/azure-vm-utils/MANA preparation, reboot gate, recovery](docs/guest-preparation.md)
 - [Execution, acceptance and recovery](docs/execution-recovery.md)
 - [Terraform ownership and reconciliation](docs/terraform.md)
 - [Disposable test environment and live acceptance](docs/testing.md)

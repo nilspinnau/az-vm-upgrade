@@ -710,4 +710,135 @@ InModuleScope AzVmUpgrade {
             (Get-ChildItem $TestDrive -Recurse -Filter *.md | Get-Content -Raw) -join '' | Should -Match 'Guest guidance'
         }
     }
+
+    Describe 'Native guest preparation, reboot and recovery' {
+        BeforeEach {
+            $script:evidence = New-FixtureEvidence
+            $script:evidence.guest.bootId = 'boot-aaaaaaaa'
+            $script:evidence.guest.azureVmUtils = 'failed'
+            $script:evidence.fingerprint = Get-ConfigurationFingerprint $script:evidence
+            $script:plan = New-VmUpgradePlan $script:evidence -TargetSize 'Standard_D2s_v6' -Controller NVMe -WorkloadReview (New-FixtureReview)
+            $script:prep = New-GuestPreparationPlan -Plan $script:plan -Component nvme-boot, azure-vm-utils -GuestChangeConsent
+            $script:journals = Join-Path $TestDrive 'journals'
+        }
+        It 'binds a preparation request to the plan, catalog version and fingerprint' {
+            $script:prep.planHash | Should -Be $script:plan.hash
+            $script:prep.azureVmUtilsVersion | Should -Be '0.6.0-4~ubuntu0.22.04.1'
+            $script:prep.expectedFingerprint | Should -Be $script:plan.evidence.fingerprint
+            { Test-UpgradeDocument $script:prep preparation } | Should -Not -Throw
+        }
+        It 'refuses unsupported components, altered plans, stale guest evidence and unsupported profiles' {
+            { New-GuestPreparationPlan -Plan $script:plan -Component mana-windows-driver -GuestChangeConsent } | Should -Throw '*not supported*'
+            $altered = @{} + $script:plan; $altered.targetSize = 'Standard_D4s_v6'
+            { New-GuestPreparationPlan -Plan $altered -Component nvme-boot -GuestChangeConsent } | Should -Throw '*hash*'
+            $e = New-FixtureEvidence; $e.guest.observedAt = [DateTimeOffset]::UtcNow.AddHours(-3).ToString('o')
+            $e.fingerprint = Get-ConfigurationFingerprint $e
+            $stale = New-VmUpgradePlan $e -TargetSize 'Standard_D2s_v6' -Controller NVMe -WorkloadReview (New-FixtureReview)
+            { New-GuestPreparationPlan -Plan $stale -Component nvme-boot -GuestChangeConsent } | Should -Throw
+            $e = New-FixtureEvidence; $e.guest.osProfile = 'rhel:9:x86_64'
+            $e.fingerprint = Get-ConfigurationFingerprint $e
+            $other = New-VmUpgradePlan $e -TargetSize 'Standard_D2s_v6' -Controller NVMe -WorkloadReview (New-FixtureReview)
+            { New-GuestPreparationPlan -Plan $other -Component nvme-boot -GuestChangeConsent } | Should -Throw '*no supported preparation*'
+        }
+        It 'never invents a Windows MANA download and validates operator artifacts' {
+            $e = New-FixtureEvidence; $e.guest.osProfile = 'windows:20348:AMD64'
+            $e.fingerprint = Get-ConfigurationFingerprint $e
+            $win = New-VmUpgradePlan $e -TargetSize 'Standard_D2s_v6' -Controller NVMe -WorkloadReview (New-FixtureReview)
+            { New-GuestPreparationPlan -Plan $win -Component mana-windows-driver -GuestChangeConsent } | Should -Throw '*No approved Windows MANA artifact*'
+            { New-GuestPreparationPlan -Plan $win -Component mana-windows-driver -DriverPackagePath 'C:\x.zip' -DriverPackageSha256 'zz' -GuestChangeConsent } | Should -Throw '*Invalid*'
+            $ok = New-GuestPreparationPlan -Plan $win -Component mana-windows-driver -DriverPackagePath 'C:\drop\mana.zip' -DriverPackageSha256 ('A' * 64) -GuestChangeConsent
+            $ok.driverPackageSha256 | Should -Be ('a' * 64)
+            (Get-GuestPreparationScript $ok apply) | Should -Match 'DriverPackageSha256='
+        }
+        It 'refuses to inject values that fail validation and omits consent for status' {
+            $bad = @{} + $script:prep; $bad.azureVmUtilsVersion = "1'; rm -rf /; '"
+            { Get-GuestPreparationScript $bad apply } | Should -Throw '*Invalid*'
+            (Get-GuestPreparationScript $script:prep status) | Should -Match "AZVM_PREPARE_CONSENT=''"
+            (Get-GuestPreparationScript $script:prep apply) | Should -Match "AZVM_PREPARE_CONSENT='approved-guest-preparation'"
+        }
+        It 'requires guest consent, an unaltered request, rollback acknowledgement and drift-free live resources' {
+            { Invoke-GuestPreparation -Preparation $script:prep -Action apply -GuestConsent:$false -JournalDirectory $script:journals } | Should -Throw '*consent*'
+            $altered = @{} + $script:prep; $altered.components = @('nvme-boot')
+            { Invoke-GuestPreparation -Preparation $altered -Action apply -GuestConsent -JournalDirectory $script:journals } | Should -Throw '*altered*'
+            { Invoke-GuestPreparation -Preparation $script:prep -Action rollback -GuestConsent -JournalDirectory $script:journals } | Should -Throw '*RollbackAcknowledged*'
+            $drift = New-FixtureEvidence; $drift.fingerprint = 'f' * 64
+            Mock Get-VmEvidence { $drift }
+            { Invoke-GuestPreparation -Preparation $script:prep -Action apply -GuestConsent -JournalDirectory $script:journals -Confirm:$false } | Should -Throw '*changed since*'
+        }
+        It 'WhatIf makes no cloud mutation and an interrupted journal blocks a blind retry' {
+            Mock Get-VmEvidence { $script:evidence }
+            Mock Invoke-UpgradeAz { throw 'must not be called' }
+            Invoke-GuestPreparation -Preparation $script:prep -Action apply -GuestConsent -JournalDirectory $script:journals -WhatIf | Out-Null
+            Should -Invoke Invoke-UpgradeAz -Times 0
+            [IO.Directory]::CreateDirectory($script:journals) | Out-Null
+            Write-UpgradeJson @{ schemaVersion = 'preparation-journal/1.0'; vmId = $script:prep.vmId; status = 'in-progress'; events = @() } (Join-Path $script:journals "prep-$($script:prep.hash.Substring(0,16)).journal.json")
+            { Invoke-GuestPreparation -Preparation $script:prep -Action apply -GuestConsent -JournalDirectory $script:journals -Confirm:$false } | Should -Throw '*interrupted*'
+        }
+        It 'journals a verified manifest, rejects a mismatched one and records guest failures' {
+            Mock Get-VmEvidence { $script:evidence }
+            $script:response = $null
+            Mock Invoke-UpgradeAz { $script:response }
+            $manifest = @{ schemaVersion = 'preparation-manifest/1.0'; action = 'apply'; planHash = $script:prep.planHash; status = 'ok'; bootId = 'boot-aaaaaaaa'
+                rebootRequired = $true; observedAt = [DateTimeOffset]::UtcNow.ToString('o'); changes = @(@{ component = 'nvme-boot'; item = 'initramfs'; state = 'changed'; detail = 'ok' }) }
+            $script:response = @{ value = @(@{ code = 'ProvisioningState/succeeded/StdOut'; message = "AZVM_PREP_BEGIN`n$($manifest | ConvertTo-Json -Depth 5)`nAZVM_PREP_END" }) }
+            (Invoke-GuestPreparation -Preparation $script:prep -Action apply -GuestConsent -JournalDirectory $script:journals -Confirm:$false).status | Should -Be 'ok'
+            (Read-UpgradeJson (Join-Path $script:journals "prep-$($script:prep.hash.Substring(0,16)).journal.json")).status | Should -Be 'applied-awaiting-reboot'
+            $manifest.planHash = '9' * 64
+            $script:response = @{ value = @(@{ code = 'x/StdOut'; message = "AZVM_PREP_BEGIN`n$($manifest | ConvertTo-Json -Depth 5)`nAZVM_PREP_END" }) }
+            { Read-PreparationManifest $script:response $script:prep apply } | Should -Throw '*does not match*'
+            { Read-PreparationManifest @{ value = @(@{ code = 'x/StdOut'; message = 'AZVM_PREP_BEGIN {' }) } $script:prep apply } | Should -Throw '*missing or truncated*'
+        }
+        It 'restarts only with separate consent and a prepared journal, never resizing' {
+            { Restart-VmForPreparation -Preparation $script:prep -RebootConsent:$false -JournalDirectory $script:journals } | Should -Throw '*consent*'
+            { Restart-VmForPreparation -Preparation $script:prep -RebootConsent -JournalDirectory $script:journals } | Should -Throw '*No preparation journal*'
+            [IO.Directory]::CreateDirectory($script:journals) | Out-Null
+            $path = Join-Path $script:journals "prep-$($script:prep.hash.Substring(0,16)).journal.json"
+            Write-UpgradeJson @{ status = 'applied-awaiting-reboot'; vmId = $script:prep.vmId; events = @() } $path
+            Mock Get-VmEvidence { $script:evidence }
+            Mock Invoke-ArmPowerAction {}
+            Mock Wait-VmState {}
+            Restart-VmForPreparation -Preparation $script:prep -RebootConsent -JournalDirectory $script:journals -Confirm:$false | Should -Be 'applied-restarted-awaiting-reassessment'
+            Should -Invoke Invoke-ArmPowerAction -Times 1 -ParameterFilter { $Action -eq 'restart' }
+            Should -Invoke Invoke-ArmPowerAction -Times 0 -ParameterFilter { $Action -ne 'restart' }
+            (Get-Content (Join-Path $script:RepositoryRoot 'src\Preparation.ps1') -Raw) | Should -Not -Match 'Action deallocate|Resize-|vm update|Invoke-ArmMutation'
+        }
+        It 'accepts only fresh post-reboot evidence and rejects unchanged boot, regressions and hidden changes' {
+            $manifest = @{ status = 'ok'; action = 'apply'; planHash = $script:prep.planHash; bootId = 'boot-aaaaaaaa'; observedAt = [DateTimeOffset]::UtcNow.AddMinutes(-5).ToString('o') }
+            $post = New-FixtureEvidence; $post.guest.bootId = 'boot-bbbbbbbb'; $post.guest.azureVmUtils = 'pass'
+            $script:prep.expectedStorageIdentityHash = $post.guest.storageIdentityHash
+            (Test-PreparationOutcome $script:prep $manifest $post).status | Should -Be 'accepted'
+            $same = New-FixtureEvidence; $same.guest.bootId = 'boot-aaaaaaaa'; $same.guest.azureVmUtils = 'pass'
+            (Test-PreparationOutcome $script:prep $manifest $same).status | Should -Be 'rejected'
+            $regress = New-FixtureEvidence; $regress.guest.bootId = 'boot-bbbbbbbb'; $regress.guest.azureVmUtils = 'pass'; $regress.guest.mellanoxDriver = 'failed'
+            (Test-PreparationOutcome $script:prep $manifest $regress).status | Should -Be 'rejected'
+            $resized = New-FixtureEvidence; $resized.guest.bootId = 'boot-bbbbbbbb'; $resized.guest.azureVmUtils = 'pass'; $resized.vm.hardwareProfile.vmSize = 'Standard_D4s_v6'
+            (Test-PreparationOutcome $script:prep $manifest $resized).status | Should -Be 'rejected'
+            (Test-PreparationOutcome $script:prep $manifest $post).next | Should -Match 'NEW upgrade plan'
+        }
+        It 'keeps guest scripts bounded: no fstab rewrite, download, format, kernel upgrade or conversion bypass' {
+            foreach ($f in 'guest\prepare-ubuntu-nvme.sh', 'guest\prepare-windows-nvme.ps1') {
+                $text = Get-Content (Join-Path $script:RepositoryRoot $f) -Raw
+                $text | Should -Not -Match 'mkfs|Format-Volume|curl |wget |Invoke-WebRequest|dist-upgrade|full-upgrade|FixOperatingSystemSettings|IgnoreOSCheck|Azure-NVMe-Conversion'
+                $text | Should -Not -Match 'sed -i[^\n]*fstab|>\s*/etc/fstab'
+            }
+            (Get-Content (Join-Path $script:RepositoryRoot 'src\Preparation.ps1') -Raw) | Should -Not -Match 'Invoke-WebRequest|Invoke-RestMethod|Invoke-Expression|Azure-NVMe-Conversion'
+        }
+        It 'catalog pins only reviewed package channels and Windows driver stays operator-supplied' {
+            $catalog = Get-PreparationCatalog
+            $catalog.azureVmUtils.approvedVersions.Keys | Sort-Object | Should -Be @('ubuntu:22.04', 'ubuntu:24.04')
+            $catalog.manaWindows.pinnable | Should -BeFalse
+            $catalog.manaLinux.automated | Should -BeFalse
+        }
+        It 'probes emit bootId and the live harness refuses without consent or a bound context' {
+            (Get-Content (Join-Path $script:RepositoryRoot 'guest\linux-probe.sh') -Raw) | Should -Match 'bootId'
+            (Get-Content (Join-Path $script:RepositoryRoot 'guest\windows-probe.ps1') -Raw) | Should -Match 'bootId'
+            $text = Get-Content (Join-Path $script:RepositoryRoot 'tests\integration\Invoke-LabPreparationAcceptance.ps1') -Raw
+            $text | Should -Match 'LiveTestConsent'
+            $text | Should -Match 'preparationHash'
+            $text | Should -Not -Match 'deallocate|Resize|IgnoreOSCheck'
+            $guide = Join-Path $TestDrive 'j.json'
+            Write-UpgradeJson @{ vmId = 'x'; status = 'failed'; pendingAction = $null } $guide
+            (Get-PreparationRecoveryGuide $guide) | Should -Match 'a VM restore'
+        }
+    }
 }

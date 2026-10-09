@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schemaVersion", "action", "planHash", "status", "bootId", "observedAt", "changes"],
+  "properties": {
+    "schemaVersion": {"const": "preparation-manifest/1.0"},
+    "action": {"enum": ["apply", "rollback", "status"]},
+    "planHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "status": {"enum": ["ok", "failed"]},
+    "bootId": {"type": "string", "minLength": 8, "maxLength": 64},
+    "rebootRequired": {"type": "boolean"},
+    "observedAt": {"type": "string"},
+    "changes": {
+      "type": "array", "maxItems": 40,
+      "items": {
+        "type": "object",
+        "required": ["component", "item", "state", "detail"],
+        "properties": {
+          "component": {"type": "string", "maxLength": 40},
+          "item": {"type": "string", "maxLength": 80},
+          "state": {"type": "string", "maxLength": 30},
+          "detail": {"type": "string", "maxLength": 300}
+        }
+      }
+    }
+  }
+}

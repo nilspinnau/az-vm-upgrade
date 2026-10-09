@@ -10,7 +10,7 @@ AzureRM is pinned to 4.48.0; the provider lock file is committed.
 |---|---|
 | PowerShell parsing | All module, customer, guest, fixture and integration scripts passed |
 | Configured static analysis | Module, customer, guest and integration scripts passed |
-| Decision/orchestration tests | 80 Pester tests passed (12 cover the pinned backend, azure-vm-utils and MANA guidance); no failures, skips or unrun tests. Upstream catalog hashes were also verified against locally fetched copies. No live Azure, guest or backend execution was performed |
+| Decision/orchestration tests | 92 Pester tests passed (12 cover the pinned backend, 12 cover native guest preparation, reboot gating, outcome acceptance and recovery); no failures, skips or unrun tests. Upstream catalog hashes were also verified against locally fetched copies. No live Azure, guest or backend execution was performed |
 | Guest script syntax | Bash syntax and embedded Python AST parsing passed; no guest script executed |
 | Terraform format/validate | Passed |
 | Installed provider schema | Linux/Windows size/controller and NIC acceleration attributes verified |
@@ -71,3 +71,13 @@ scope and approval. Follow [test guidance](testing.md).
 GitHub publication is separate: confirm the intended personal owner and
 visibility before creating a remote repository or pushing. The software local
 commit is authorized; no remote creation or publication was performed.
+
+## Guest preparation: skipped live items
+
+Not run (no live authorization): Ubuntu/Windows preparation apply, azure-vm-utils
+package install, Windows MANA artifact install, reboot, post-reboot boot-ID
+reassessment, mounts/data sentinel, connectivity/health, guest rollback and
+VM-level restore, and Terraform live no-op reconciliation. The harness
+`Invoke-LabPreparationAcceptance.ps1` exists for these and is offline-tested
+only for refusal without consent and a bound context. Bash syntax and
+PSScriptAnalyzer passed for the new guest scripts; no guest script executed.

@@ -86,3 +86,11 @@ Generate a case-specific guide:
 Expired approvals remain expired during recovery. They are not silently extended.
 Record recovery failures explicitly and use your Azure support/change process
 for unsupported or uncertain paths.
+
+## Guest preparation journals
+
+Preparation has its own journal (`out\journals\prep-*.journal.json`) written
+before each guest call. An `in-progress` journal means the outcome is unknown:
+run `Invoke-VmPreparation.ps1 -Mode Status` and review; apply/rollback are
+refused until then. Guest rollback restores recorded values only, is not a VM
+restore, and has not been proven live. See [guest-preparation.md](guest-preparation.md).

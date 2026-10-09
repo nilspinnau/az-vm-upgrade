@@ -123,3 +123,11 @@ cleanup results. No cleanup command is executed by this toolkit.
 correctness static rules, Pester decision/orchestration fixtures, exact pinned
 provider schema checks, Terraform format/validate and mocked profile tests.
 It does not call guest code or Azure. Offline mocks are never labeled live success.
+
+## Preparation live harness (not run)
+
+After separate approval, `tests\integration\Invoke-LabPreparationAcceptance.ps1`
+exercises apply, restart, reassessment, optional Terraform no-op evidence and
+optional rollback on a disposable VM; see [guest-preparation.md](guest-preparation.md).
+Record data-sentinel, mount, connectivity and health results in the output
+file. Offline CI never invokes it.

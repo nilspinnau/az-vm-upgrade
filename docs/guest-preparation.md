@@ -1,59 +1,54 @@
-# Guest evidence and preparation
+# Guest preparation (plan-bound, offline-tested only)
 
-Guest Run Command always requires explicit consent, even for observation.
-The probe emits marked structured JSON and refuses oversized/truncated output.
-It does not dump environment variables, application files or secrets.
+Preparation changes **guest** settings before an upgrade. It never resizes,
+deallocates, changes the controller or touches Terraform, and it is not the
+upgrade. The cycle has separate consent gates:
 
-Linux observations include OS/kernel/architecture and boot mode, guest agent,
-pending reboot, NVMe/MANA/Mellanox module presence, NVMe boot image/timeout,
-block layout, stable filesystem identifiers, mounts, swap and bounded VF
-traffic counters. LVM/RAID/crypt and temporary-storage dependencies are excluded
-from execution. A missing tool or boot image does not become readiness.
+1. Fresh assessment and an approved upgrade plan (`New-VmUpgradePlan`).
+2. `scripts\Invoke-VmPreparation.ps1 -Mode New -PlanPath <plan> -Component nvme-boot,azure-vm-utils -GuestChangeConsent`
+   writes `out\preparation.json` (`preparation/1.0`), bound to the plan hash,
+   live-configuration fingerprint, guest-evidence age (30 min), catalog and OS profile.
+3. `-Mode Apply -GuestChangeConsent` runs the bounded guest script through Run
+   Command under the per-VM lock with a journal written *before* the call.
+   Drift, an expired request or an interrupted earlier call block it.
+4. `-Mode Restart -RebootConsent` is a separate, restart-only step.
+5. `-Mode Verify -GuestChangeConsent` collects fresh evidence and accepts only
+   when the boot ID changed, Azure VM/disk/NIC configuration is unchanged,
+   mounts/disk identities are unchanged, Mellanox/synthetic networking is
+   retained and each component verified.
+6. Create a **new** upgrade plan and approval. Preparation evidence does not
+   authorize an upgrade and does not prove a later boot on NVMe.
 
-Windows observations include OS build/architecture, boot-disk controller,
-stornvme service start configuration, adapters/driver observations, pagefile
-locations, disk state, drive assignments, persistent volume identities and
-bounded VF traffic. Non-present MANA/Mellanox drivers can remain unknown.
+`-Mode Status`, `Rollback -RollbackAcknowledged` and `Guide` support recovery.
 
-The lab managed-data sentinel is `/mnt/upgrade-test/azvm-sentinel.txt` on Linux
-or `F:\azvm-sentinel.txt` on Windows. The application sentinel is respectively
-`/var/lib/az-vm-upgrade/healthy` or `C:\ProgramData\az-vm-upgrade\healthy`,
-containing `healthy`. Richer approved health checks can be supplied separately
-in the plan-bound workload contract.
+## Components
 
-## Reversible preparation
+| Component | Platform | What it does | Not done |
+|---|---|---|---|
+| `nvme-boot` | Ubuntu 22.04/24.04 x86_64 | Records originals, stages `nvme`/`nvme_core` in initramfs modules, sets `nvme_core.io_timeout=240` modprobe option, rebuilds initramfs, verifies with `lsinitramfs` | No kernel upgrade; refuses `/dev/sd*`/`/dev/nvme*` fstab entries; **never rewrites fstab** |
+| `nvme-boot` | Windows Server 2022 (20348) | Records `stornvme`/`vpci` Start and StartOverride per ControlSet, sets boot start, removes StartOverride, verifies | Other builds refused |
+| `azure-vm-utils` | Ubuntu only | Installs the exact catalog version offered by the Ubuntu archive after a simulated install that must not remove or touch kernel/boot/systemd/udev/ssh/cloud-init packages; marker file enables rollback | Other distributions stay manual |
+| `mana-linux-check` | Ubuntu | Detect-only report | No kernel or package automation; kernel version is not a gate |
+| `mana-windows-driver` | Windows | Installs an **operator-supplied** zip: SHA256 must match the reviewed value, no executables, every `.cat/.sys/.dll` Authenticode-valid with a Microsoft signer, exactly one INF for `VEN_1414&DEV_00BA`, installed with `pnputil` | Microsoft's download link is mutable, so no artifact is pinned or downloaded |
 
-Preparation is separate from disruptive execution. The engine expects a
-fresh ready guest and makes **no hidden package, kernel, mount or driver
-installation changes**.
+Driver presence, host placement and real VF traffic remain distinct checks.
+Temp-disk initialization, fstab edits and kernel changes are out of scope.
 
-`guest/prepare-ubuntu-nvme.sh` is restricted to Ubuntu 22.04/24.04 lab profiles.
-It preserves the original initramfs module file and NVMe config, stages
-`nvme`/`nvme_core`, configures `io_timeout=240` and rebuilds the current kernel's
-initramfs. It refuses unstable device-name mounts; it does not rewrite arbitrary
-fstab entries. Run only after separate guest-change approval, with
-`AZVM_PREPARE_CONSENT=approved-disposable-lab`. Reboot under separate approval,
-then reassess. Do not mistake a rebuilt initramfs for a proved post-reboot boot.
+## Recovery boundaries
 
-`guest/prepare-windows-nvme.ps1 -ApprovedDisposableLab` preserves the original
-stornvme start value and sets boot start, for Server 2022 only. Driver packages
-must be obtained/reviewed from Microsoft or the supported distribution, never
-an arbitrary downloaded executable or unreviewed community hook.
+Each run saves a manifest (`preparation-manifest/1.0`) and journal. Rollback
+restores only recorded values or artifacts this toolkit installed. It is
+**not** a VM restore, requires a reboot and fresh evidence, and has not been
+proven live: backup files and recorded values are not proof of restoration.
+The upstream full conversion is never nested; see [nvme-backend.md](nvme-backend.md).
 
-Preparation backups remain inside the guest, under the documented preparation
-directory. Restore original files/registry settings only in a separately
-reviewed recovery procedure and only after confirming controller compatibility.
+## Consent-gated live harness
 
-## Test-data initialization is not temporary-disk formatting
+`tests\integration\Invoke-LabPreparationAcceptance.ps1` runs apply, restart,
+reassessment, an optional Terraform no-op evidence check and an optional
+rollback. It requires `-LiveTestConsent` and a context bound to the preparation
+hash (`labOnly`, `guestConsent`, `restartApproved`, `exclusiveWindow`, test
+resource group, data-sentinel note, expiry). It has not been run.
 
-The two `lab-sentinel-*` scripts can initialize **only an explicitly identified,
-new Terraform test data disk**, after separate destructive approval. They
-require exact ARM disk ID/unique ID, IMDS LUN corroboration, guest serial match,
-OS-disk exclusion and an untouched RAW/no-signature disk. They never select by
-device name, order, model or size alone. Any mismatch stops; platform-specific
-serial mapping may need a reviewed manual procedure.
-
-The initialization scripts are not part of the upgrade engine and are not
-invoked automatically by Terraform or the test suite. They are off by default.
-No temporary disk is formatted anywhere. Existing managed data is never
-reinitialized to make a probe pass.
+Sources: [sources.md](sources.md) (MIT-licensed upstream procedures are
+re-implemented with attribution; no upstream or customer script is copied).

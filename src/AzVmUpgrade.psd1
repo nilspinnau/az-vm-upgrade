@@ -11,7 +11,8 @@
         'Test-TerraformUpgradePlan', 'Get-UpgradeHash', 'Read-UpgradeJson',
         'Write-UpgradeJson', 'Test-UpgradeDocument', 'Get-SkuCapability',
         'Get-QuotaProjection', 'Get-LifecycleFinding', 'Test-TargetCompatibility',
-        'Get-BackendCatalog', 'Test-BackendFile', 'New-ExternalBackendPlan', 'Test-ExternalBackendResult'
+        'Get-BackendCatalog', 'Test-BackendFile', 'New-ExternalBackendPlan', 'Test-ExternalBackendResult',
+        'New-GuestPreparationPlan', 'Invoke-GuestPreparation', 'Restart-VmForPreparation', 'Test-PreparationOutcome', 'Get-PreparationRecoveryGuide'
     )
     CmdletsToExport = @()
     VariablesToExport = @()
