@@ -73,6 +73,7 @@ To omit Terraform checks, use `-SkipTerraform`; guest syntax checks still requir
 ## Guides
 
 - [Quickstart and approval flow](docs/quickstart.md)
+- [Optional pinned NVMe backend, azure-vm-utils, MANA](docs/nvme-backend.md)
 - [Permissions and privacy](docs/permissions.md)
 - [Discovery, lifecycle and Advisor coverage](docs/discovery.md)
 - [Target compatibility and quota arithmetic](docs/planning.md)

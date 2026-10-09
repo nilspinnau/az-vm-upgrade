@@ -168,6 +168,29 @@ function Test-TargetCompatibility {
     return @($checks)
 }
 
+function Get-GuestAdvisory {
+    param([Parameter(Mandatory)]$Evidence)
+    $guest = $Evidence.guest
+    if (-not $guest) { return @() }
+    $items = [Collections.Generic.List[string]]::new()
+    $windows = "$($guest.osProfile)" -like 'windows:*'
+    if (-not $windows -and (Get-Field $guest 'azureVmUtils') -and $guest.azureVmUtils -ne 'pass') {
+        $items.Add('azure-vm-utils (azure-nvme-id and /dev/disk/azure links) was not fully detected. Install it from the distribution package channel if your release provides one and use /dev/disk/azure/* paths in application configuration. It supplies stable device identification only; it does not replace NVMe boot-driver staging or stable-mount verification.')
+    }
+    if ($guest.manaDriver -ne 'pass') {
+        $items.Add($(if ($windows) { 'MANA driver not found. Obtain the driver through the Microsoft entry point listed in the MANA documentation, verify its Authenticode signature, install it, reboot and reassess. The toolkit does not download or install it.' }
+            else { 'MANA module not found. Check your distribution kernel/package documentation for MANA support; do not infer support from the kernel version alone because vendors backport. Mellanox drivers must remain.' }))
+    }
+    $nicAccelerated = @($Evidence.nics | Where-Object acceleratedNetworking -EQ $true).Count -gt 0
+    if ($nicAccelerated -and (Get-Field $guest 'manaDevicePresent') -eq $false) {
+        $items.Add('Accelerated Networking is enabled but no MANA PCI device is visible on the current host hardware. This is expected on Mellanox-backed hosts; the target size may land on MANA hardware, so keep both drivers.')
+    }
+    if ($guest.manaInUse -eq 'unknown') {
+        $items.Add('MANA/VF use is unknown (an idle VM shows no traffic). Generate representative traffic and compare VF counters; unknown is not a pass.')
+    }
+    return @($items)
+}
+
 function New-VmUpgradePlan {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Evidence, [string]$TargetSize,
@@ -283,6 +306,7 @@ function New-VmUpgradePlan {
         }
         $iac.suggestions = @("Set $($TerraformMapping.vmAddress).size = $TargetSize", "Set $($TerraformMapping.vmAddress).disk_controller_type = $Controller", 'Preserve NIC properties; no ignore_changes is generated.')
     }
+    $advisories = @(Get-GuestAdvisory $Evidence)
     $classification = if (@($checks | Where-Object { $_.name -eq 'boot-generation' -and $_.status -eq 'unsupported' }).Count) { 'requires-rebuild' }
     elseif (@($checks | Where-Object { $_.name -eq 'workload-certification' }).Count) { 'requires-application-specific-work' }
     elseif (@($checks | Where-Object status -EQ 'unsupported').Count -or @($checks | Where-Object status -EQ 'failed').Count) { 'blocked' }
@@ -297,7 +321,7 @@ function New-VmUpgradePlan {
         targetSize = if ($TargetSize) { $TargetSize } else { $null }
         targetController = if ($Controller) { $Controller } else { $null }
         classification = $classification
-        executionBoundary = 'disposable-lab-only'; checks = @($checks); candidates = $candidates
+        executionBoundary = 'disposable-lab-only'; checks = @($checks); advisories = $advisories; candidates = $candidates
         quota = $quotaResult; capacity = $Evidence.capacity; terraform = $iac
         workloadReview = $WorkloadReview; fingerprint = $Evidence.fingerprint
         evidence = $Evidence; hash = $null

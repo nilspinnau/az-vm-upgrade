@@ -70,6 +70,10 @@ function Export-VmUpgradeReport {
         $lines.Add("| $(ConvertTo-MarkdownCell $check.name) | $($check.status) | $(ConvertTo-MarkdownCell $check.detail) | $(ConvertTo-MarkdownCell $check.source) |")
     }
     $lines.Add('')
+    $lines.Add('## Guest guidance (advisory, not execution authorization)')
+    foreach ($advisory in @($Plan.advisories)) { $lines.Add("- $(ConvertTo-MarkdownCell $advisory)") }
+    if (-not @($Plan.advisories).Count) { $lines.Add('- No guest advisories were generated from the collected evidence.') }
+    $lines.Add('')
     $lines.Add('## Target candidates and quota')
     $lines.Add('| Target | Compatible metadata | Family | vCPUs | Memory GB | Quota | Capacity |')
     $lines.Add('|---|---|---|---|---|---|---|')

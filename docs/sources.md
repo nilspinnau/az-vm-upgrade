@@ -17,6 +17,9 @@ utility, customer material or SAP project implementation is bundled.
 | Advisor retirement metadata / coverage limits | https://learn.microsoft.com/en-us/azure/advisor/advisor-how-to-use-service-upgrade-retirement-recommendations |
 | Advisor workbook limitations | https://learn.microsoft.com/en-us/azure/advisor/advisor-workbook-service-retirement |
 | Pinned Linux VM schema and controller/size Update implementation | https://github.com/hashicorp/terraform-provider-azurerm/blob/v4.48.0/internal/services/compute/linux_virtual_machine_resource.go |
+| Optional conversion backend (MIT), commit `f27603bf4189f436da577ba3e945b3857d508c9c` | https://github.com/Azure/SAP-on-Azure-Scripts-and-Utilities/tree/f27603bf4189f436da577ba3e945b3857d508c9c/Azure-NVMe-Utils |
+| azure-vm-utils (MIT), tag v0.7.0 = commit `7989a36fcf233e4c4bd5fbc20964f3f038b08060` | https://github.com/Azure/azure-vm-utils/tree/7989a36fcf233e4c4bd5fbc20964f3f038b08060 |
+| MANA Windows driver entry point (mutable redirect, not pinned) | https://aka.ms/manawindowsdrivers |
 | Pinned Windows VM schema and controller/size Update implementation | https://github.com/hashicorp/terraform-provider-azurerm/blob/v4.48.0/internal/services/compute/windows_virtual_machine_resource.go |
 
 Provider source was reviewed rather than copied. Installed AzureRM 4.48.0
@@ -34,7 +37,11 @@ the sole SKU-retirement authority.
 no implementation was copied. Cost Management/Excel reporting and cost-impact
 calculation remain out of scope.
 
-Original code/documentation is MIT; see LICENSE and NOTICE. External Azure
+Original code/documentation is MIT; see LICENSE and NOTICE. The Azure NVMe
+conversion script and azure-vm-utils are MIT-licensed Microsoft projects that
+are only referenced by commit and SHA256 in `catalog/backends.json`; none of
+their code is vendored or redistributed here, and the toolkit never downloads
+them. See [nvme-backend.md](nvme-backend.md). External Azure
 CLI, Terraform, provider and PowerShell test dependencies retain their own
 licenses and are not redistributed as binaries. Redistribution/publication
 must still be reviewed for any future third-party additions and customer data.

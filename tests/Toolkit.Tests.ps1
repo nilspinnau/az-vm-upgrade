@@ -592,4 +592,122 @@ InModuleScope AzVmUpgrade {
             Should -Invoke Invoke-UpgradeAz -Times 0 -Exactly
         }
     }
+
+    Describe 'Pinned NVMe backend, azure-vm-utils and MANA guidance' {
+        BeforeEach {
+            $script:backend = (Get-BackendCatalog).backends | Where-Object id -EQ 'sap-azure-nvme-conversion'
+            $script:scriptFile = Join-Path $TestDrive 'Azure-NVMe-Conversion.ps1'
+            Set-Content -LiteralPath $script:scriptFile -Value 'synthetic'
+            $script:acks = @{ AcceptNoToolkitControls = $true; AcceptDowntime = $true; AcceptNoAutomaticRollback = $true }
+        }
+        It 'pins immutable commits and hashes with a license and no mutable references' {
+            foreach ($b in (Get-BackendCatalog).backends | Where-Object { $_.commit }) {
+                $b.commit | Should -Match '^[0-9a-f]{40}$'
+                $b.license | Should -Be 'MIT'
+            }
+            foreach ($b in (Get-BackendCatalog).backends | Where-Object { $_.sha256 }) { $b.sha256 | Should -Match '^[0-9a-f]{64}$' }
+            (Get-BackendCatalog).backends.sourceArchiveSha256 | Where-Object { $_ } | Should -Match '^[0-9a-f]{64}$'
+            (Get-Content (Join-Path $script:RepositoryRoot 'catalog\backends.json') -Raw) | Should -Not -Match '/(main|master|latest)/|refs/heads'
+            (Get-BackendCatalog).backends | Where-Object id -EQ 'mana-windows-driver' | ForEach-Object { $_.pinnable | Should -BeFalse }
+        }
+        It 'records that the upstream conversion owns ARM operations and has no prep-only mode' {
+            $script:backend.ownsArmOperations | Should -BeTrue
+            $script:backend.prepOnlyMode | Should -BeFalse
+            $script:backend.forbiddenParameters | Should -Contain 'IgnoreOSCheck'
+            $script:backend.forbiddenParameters | Should -Contain 'FixOperatingSystemSettings'
+        }
+        It 'fails closed on a hash mismatch or a missing file and never downloads' {
+            { Test-BackendFile 'sap-azure-nvme-conversion' $script:scriptFile } | Should -Throw '*does not match*'
+            { Test-BackendFile 'sap-azure-nvme-conversion' (Join-Path $TestDrive 'absent.ps1') } | Should -Throw '*never downloads*'
+            { Test-BackendFile 'unknown-backend' $script:scriptFile } | Should -Throw
+            (Get-Content (Join-Path $script:RepositoryRoot 'src\Backends.ps1') -Raw) | Should -Not -Match 'Invoke-WebRequest|Invoke-RestMethod|Start-Process|Invoke-Expression|iex '
+        }
+        It 'emits a pinned manual command without bypass switches once everything is verified' {
+            Mock Get-FileHash { @{ Hash = $script:backend.sha256.ToUpperInvariant() } }
+            $plan = New-FixturePlan
+            $result = New-ExternalBackendPlan $plan $script:scriptFile @script:acks
+            $result.command | Should -Match "-VMSize 'Standard_D2s_v6' -NewControllerType NVMe$"
+            $result.command | Should -Not -Match 'Ignore|FixOperatingSystemSettings|StartVM'
+            $result.verified.commit | Should -Be $script:backend.commit
+            ($result.boundaries -join ' ') | Should -Match 'never calls it'
+            $result.excludedFromToolkitControls | Should -Contain 'journal'
+        }
+        It 'requires every acknowledgement and refuses expired plans or unresolved checks' {
+            Mock Get-FileHash { @{ Hash = $script:backend.sha256.ToUpperInvariant() } }
+            $plan = New-FixturePlan
+            { New-ExternalBackendPlan $plan $script:scriptFile -AcceptDowntime } | Should -Throw '*acknowledgements*'
+            $plan.checks += (New-Check 'nvme-boot' required 'Not prepared')
+            { New-ExternalBackendPlan $plan $script:scriptFile @script:acks } | Should -Throw '*unresolved*'
+            $expired = New-FixturePlan
+            $expired.expiresAt = '2000-01-01T00:00:00Z'
+            { New-ExternalBackendPlan $expired $script:scriptFile @script:acks } | Should -Throw '*expired*'
+        }
+        It 'refuses stale guest evidence and a guest that is not NVMe-boot ready on SCSI' {
+            Mock Get-FileHash { @{ Hash = $script:backend.sha256.ToUpperInvariant() } }
+            $plan = New-FixturePlan
+            $plan.evidence.guest.observedAt = ([DateTimeOffset]::UtcNow.AddHours(-2)).ToString('o')
+            { New-ExternalBackendPlan $plan $script:scriptFile @script:acks } | Should -Throw '*Stale*'
+            $plan = New-FixturePlan
+            $plan.evidence.guest.nvmeBoot = 'failed'
+            { New-ExternalBackendPlan $plan $script:scriptFile @script:acks } | Should -Throw '*NVMe boot readiness*'
+        }
+        It 'accepts only a fresh, post-run reassessment that proves controller, size, mounts and networking' {
+            Mock Get-FileHash { @{ Hash = $script:backend.sha256.ToUpperInvariant() } }
+            $plan = New-FixturePlan
+            $backendPlan = New-ExternalBackendPlan $plan $script:scriptFile @script:acks
+            $post = New-FixtureEvidence
+            $post.vm.hardwareProfile.vmSize = 'Standard_D2s_v6'; $post.vm.storageProfile.diskControllerType = 'NVMe'
+            $post.guest.actualController = 'NVMe'; $post.guest.observedAt = [DateTimeOffset]::UtcNow.AddSeconds(5).ToString('o')
+            (Test-ExternalBackendResult $backendPlan $post -ExitCode 0).status | Should -Be 'accepted'
+            $stale = New-FixtureEvidence
+            $stale.vm.hardwareProfile.vmSize = 'Standard_D2s_v6'; $stale.vm.storageProfile.diskControllerType = 'NVMe'; $stale.guest.actualController = 'NVMe'
+            $stale.guest.observedAt = [DateTimeOffset]::UtcNow.AddMinutes(-10).ToString('o')
+            (Test-ExternalBackendResult $backendPlan $stale -ExitCode 0).checks | Where-Object name -EQ 'guest-after-run' | ForEach-Object status | Should -Be 'failed'
+            $post.guest.mellanoxDriver = 'failed'
+            (Test-ExternalBackendResult $backendPlan $post -ExitCode 0).status | Should -Be 'rejected'
+            $post.guest.mellanoxDriver = 'pass'
+            (Test-ExternalBackendResult $backendPlan $post -ExitCode 1).status | Should -Be 'rejected'
+        }
+        It 'keeps the native engine independent of the external backend' {
+            (Get-Content (Join-Path $script:RepositoryRoot 'src\Execution.ps1') -Raw) | Should -Not -Match 'Azure-NVMe-Conversion|New-ExternalBackendPlan|backends\.json'
+        }
+        It 'adds advisory azure-vm-utils and MANA guidance without changing readiness' {
+            $e = New-FixtureEvidence
+            $e.guest.azureVmUtils = 'failed'; $e.guest.manaDriver = 'unknown'; $e.guest.manaInUse = 'unknown'; $e.guest.manaDevicePresent = $false
+            $e.fingerprint = Get-ConfigurationFingerprint $e
+            $plan = New-VmUpgradePlan $e -TargetSize 'Standard_D2s_v6' -Controller NVMe -WorkloadReview (New-FixtureReview)
+            $text = $plan.advisories -join ' '
+            $text | Should -Match 'azure-vm-utils'
+            $text | Should -Match 'does not replace NVMe boot-driver'
+            $text | Should -Match 'MANA module not found'
+            $text | Should -Match 'do not infer support from the kernel version'
+            $text | Should -Match 'Mellanox-backed hosts'
+            $text | Should -Match 'unknown is not a pass'
+            $plan.advisories | Should -Not -BeNullOrEmpty
+        }
+        It 'does not give Windows an automatic driver download or Linux kernel gate' {
+            $e = New-FixtureEvidence
+            $e.guest.osProfile = 'windows:20348:AMD64'; $e.guest.manaDriver = 'failed'
+            $e.fingerprint = Get-ConfigurationFingerprint $e
+            $plan = New-VmUpgradePlan $e -TargetSize 'Standard_D2s_v6' -Controller NVMe -WorkloadReview (New-FixtureReview)
+            ($plan.advisories -join ' ') | Should -Match 'Authenticode'
+            ($plan.advisories -join ' ') | Should -Match 'does not download'
+        }
+        It 'extends guest probes and schema with optional azure-vm-utils and MANA device fields' {
+            (Get-Content (Join-Path $script:RepositoryRoot 'guest\linux-probe.sh') -Raw) | Should -Match 'azureVmUtils.*manaDevicePresent'
+            (Get-Content (Join-Path $script:RepositoryRoot 'guest\windows-probe.ps1') -Raw) | Should -Match 'manaDevicePresent'
+            $e = New-FixtureEvidence
+            $e.guest.azureVmUtils = 'pass'; $e.guest.manaDevicePresent = $true
+            Test-UpgradeDocument $e.guest guest | Should -BeTrue
+            $e.guest.azureVmUtils = 'bogus'
+            { Test-UpgradeDocument $e.guest guest } | Should -Throw
+        }
+        It 'prints guest advisories in the customer report' {
+            $e = New-FixtureEvidence; $e.guest.azureVmUtils = 'failed'
+            $e.fingerprint = Get-ConfigurationFingerprint $e
+            $plan = New-VmUpgradePlan $e -TargetSize 'Standard_D2s_v6' -Controller NVMe -WorkloadReview (New-FixtureReview)
+            Export-VmUpgradeReport $plan -OutputDirectory $TestDrive | Out-Null
+            (Get-ChildItem $TestDrive -Recurse -Filter *.md | Get-Content -Raw) -join '' | Should -Match 'Guest guidance'
+        }
+    }
 }

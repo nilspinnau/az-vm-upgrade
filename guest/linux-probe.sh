@@ -2,7 +2,7 @@
 set -euo pipefail
 command -v python3 >/dev/null || { echo "python3 is required for structured guest evidence" >&2; exit 2; }
 python3 - <<'PY'
-import datetime, hashlib, json, os, pathlib, re, subprocess, time
+import datetime, hashlib, json, os, pathlib, re, shutil, subprocess, time
 
 def run(args, optional=False):
     try:
@@ -90,6 +90,15 @@ for name, (driver, previous, previous_packets) in interfaces.items():
             acceleration = "pass"
             if driver == "mana":
                 mana_in_use = "pass"
+def pci_ids(device):
+    try:
+        return (device / "vendor").read_text().strip(), (device / "device").read_text().strip()
+    except OSError:
+        return None, None
+mana_pci = any(pci_ids(d) == ("0x1414", "0x00ba") for d in pathlib.Path("/sys/bus/pci/devices").glob("*"))
+nvme_id = shutil.which("azure-nvme-id") is not None
+disk_links = pathlib.Path("/dev/disk/azure").is_dir()
+vm_utils = "pass" if nvme_id and disk_links else ("failed" if not nvme_id and not disk_links else "unknown")
 agent = run(["systemctl", "is-active", "walinuxagent"], optional=True)
 if agent is None:
     agent = run(["systemctl", "is-active", "waagent"], optional=True)
@@ -112,6 +121,7 @@ probe = {
     "layoutSupported": not unsupported_layout and not temporary_dependency and not swap_lines,
     "storageIdentityHash": storage_hash, "sentinelHash": sentinel_hash,
     "applicationHealth": health_status, "accelerationInUse": acceleration, "manaInUse": mana_in_use,
+    "azureVmUtils": vm_utils, "manaDevicePresent": mana_pci,
     "diskCount": sum(item["type"] == "disk" for item in all_devices),
     "swapCount": len(swap_lines), "interfaces": [{"name": n, "driver": d} for n, (d, _, _) in sorted(interfaces.items())][:8],
     "limitations": "No application secrets/configuration dumps; no package changes; idle VF traffic is unknown, not a pass."

@@ -20,6 +20,30 @@ labs. There is no bypass for production, previews or unknown checks.
 | Ephemeral OS, RAID/LVM/crypt/shared disks, Ultra/Premium SSD v2 | Detected or explicitly gated | Assessment-only in this release |
 | SAP/HPC, appliance, clustered workload, third-party boot/storage filters | Owner/certification review required | Separate application-specific work |
 
+## Full-cycle gap matrix
+
+Status: **Implemented** (offline-tested logic), **Partial**, **Blocked by
+design** (refused/assessment-only), **Untested** (no live evidence). Nothing
+here is live-validated.
+
+| Upgrade-cycle area | Status | Notes |
+|---|---|---|
+| Pre-mutation protection and proven restore | Partial | Snapshot/restore-point evidence and recovery journal exist; a restore has never been proven live. SCSI rollback is not promised |
+| Image/OS/kernel support | Partial | Ubuntu 22.04/24.04 and Windows Server 2022 probed; others assessment-only; no generic kernel gating |
+| Gen1/Gen2/rebuild | Blocked by design | Detected; separate rebuild |
+| Trusted Launch / ADE / CMK | Blocked by design | Detected and explained |
+| RAID/LVM/crypt/shared, temp disk, pagefile, swap | Blocked by design | Detected; temp-disk initialization separately approved, not implemented |
+| NIC acceleration, MANA actual use, connectivity | Partial | Capability vs device vs VF traffic reported separately; advisories added; Windows driver install is operator-only |
+| azure-vm-utils / stable device paths | Partial | Detected and advised; never a substitute for boot-driver and mount verification |
+| Placement (availability set, PPG, VMSS) | Blocked by design | Detected and explained |
+| Capacity failure and rollback | Partial | Dynamic SKU/quota readiness; allocation is only known at run time |
+| Application health / workload certification | Blocked by design | Owner-supplied review required |
+| Locks, policy, RBAC, guest agent, egress | Implemented / Untested | Checked in evidence; no live tenant validation |
+| Terraform live no-op reconciliation | Partial | Mocked plans offline; real normal plan needed |
+| Evidence freshness | Implemented | Expiry and guest freshness enforced |
+| Optional pinned upstream conversion | Partial | Manual, separately supported; see [nvme-backend.md](nvme-backend.md) |
+| Live acceptance | Untested | No live matrix has been run |
+
 Conservative exclusions are intentional. The documented no-temp-disk utility
 boundary and the broader platform NVMe page describe temporary-disk transitions
 differently; this toolkit does not silently pick a permissive interpretation

@@ -10,7 +10,8 @@
         'Export-VmUpgradeReport', 'Invoke-VmUpgrade', 'Get-VmRecoveryGuide',
         'Test-TerraformUpgradePlan', 'Get-UpgradeHash', 'Read-UpgradeJson',
         'Write-UpgradeJson', 'Test-UpgradeDocument', 'Get-SkuCapability',
-        'Get-QuotaProjection', 'Get-LifecycleFinding', 'Test-TargetCompatibility'
+        'Get-QuotaProjection', 'Get-LifecycleFinding', 'Test-TargetCompatibility',
+        'Get-BackendCatalog', 'Test-BackendFile', 'New-ExternalBackendPlan', 'Test-ExternalBackendResult'
     )
     CmdletsToExport = @()
     VariablesToExport = @()

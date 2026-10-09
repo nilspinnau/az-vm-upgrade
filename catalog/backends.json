@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "backends/1.0",
+  "verifiedOn": "2026-08-31",
+  "policy": "Pins are immutable commit SHAs plus SHA256. Nothing is downloaded by this toolkit; operators supply a local copy that is hash-verified before any command is emitted.",
+  "backends": [
+    {
+      "id": "sap-azure-nvme-conversion",
+      "kind": "controller-conversion",
+      "repository": "https://github.com/Azure/SAP-on-Azure-Scripts-and-Utilities",
+      "license": "MIT",
+      "commit": "f27603bf4189f436da577ba3e945b3857d508c9c",
+      "path": "Azure-NVMe-Utils/Azure-NVMe-Conversion.ps1",
+      "version": "2026082514",
+      "sha256": "fbf1d7e61a6f40be669b438e4cee3a82040fe86cba6212eba18baa68ffcfc4d5",
+      "support": "Upstream states the script is a utility; treat as unsupported for production unless the owner accepts that risk.",
+      "ownsArmOperations": true,
+      "prepOnlyMode": false,
+      "requiredParameters": ["ResourceGroupName", "VMName", "VMSize", "NewControllerType"],
+      "allowedOptionalParameters": ["StartVM", "WriteLogfile", "SleepSeconds"],
+      "forbiddenParameters": ["IgnoreSKUCheck", "IgnoreWindowsVersionCheck", "IgnoreAzureModuleCheck", "IgnoreOSCheck", "FixOperatingSystemSettings"],
+      "behaviours": [
+        "Requires Az.Compute 9, Az.Accounts 4 and Az.Resources 7 and an interactive Connect-AzAccount context.",
+        "Stops/deallocates the VM, updates OS disk supportedCapabilities, resizes with a direct ARM call and optionally starts it.",
+        "Contacts the main branch version.json for a version notice only; it is not executed.",
+        "With -FixOperatingSystemSettings it also runs guest changes: Linux initramfs/dracut driver staging and an fstab device-name to UUID rewrite (backup /etc/fstab.bak); Windows StartOverride/registry changes.",
+        "Rejects Azure Disk Encryption for Linux and Gen1 images; SKU, Windows-version, module and OS-readiness checks can be skipped only with Ignore switches, which this toolkit forbids."
+      ],
+      "bypassesToolkitControls": ["approval", "plan-hash", "drift", "ETag", "journal", "recovery", "lock-awareness"]
+    },
+    {
+      "id": "sap-windows-manual-nvme-prepare",
+      "kind": "guest-preparation-reference",
+      "repository": "https://github.com/Azure/SAP-on-Azure-Scripts-and-Utilities",
+      "license": "MIT",
+      "commit": "f27603bf4189f436da577ba3e945b3857d508c9c",
+      "path": "Azure-NVMe-Utils/windows-manual-nvme-prepare.ps1",
+      "version": "2026082514",
+      "sha256": "f4080a1f9cbaa4e0fea876b3dddfb313c21300fe75f87ed9f524de7dd1622e1a",
+      "ownsArmOperations": false,
+      "prepOnlyMode": true,
+      "guestChanges": ["stornvme Start=0 and StartOverride removal on all ControlSets", "vpci Start=0 and StartOverride removal", "registry flush"],
+      "caveat": "Upstream notes each SCSI boot can recreate StartOverride, so deallocate immediately after preparation. Review the script yourself; this toolkit only references it and does not execute it.",
+      "bypassesToolkitControls": ["approval", "plan-hash", "journal"]
+    },
+    {
+      "id": "azure-vm-utils",
+      "kind": "linux-device-mapping",
+      "repository": "https://github.com/Azure/azure-vm-utils",
+      "license": "MIT",
+      "tag": "v0.7.0",
+      "commit": "7989a36fcf233e4c4bd5fbc20964f3f038b08060",
+      "sourceArchive": "https://github.com/Azure/azure-vm-utils/archive/7989a36fcf233e4c4bd5fbc20964f3f038b08060.tar.gz",
+      "sourceArchiveSha256": "844e36c5475334cebce15bb04ddcd5f3628c0ef9d37f4ad8d6708dd2d07d244b",
+      "provides": ["azure-nvme-id", "udev rules for /dev/disk/azure symlinks", "udev NVMe io_timeout=240s for remote Azure NVMe devices (v0.7.0)"],
+      "installation": "Operator-driven through the distribution's own package channel when available; the toolkit never installs packages. Source packaging exists upstream for Debian, Fedora, Azure Linux/Mariner; channel availability per distribution release is not asserted here.",
+      "limits": "Provides device identification and symlinks only. It does not replace NVMe boot-driver staging or stable mount verification."
+    },
+    {
+      "id": "mana-windows-driver",
+      "kind": "operator-guidance",
+      "source": "https://learn.microsoft.com/azure/virtual-network/accelerated-networking-mana-windows",
+      "driverEntryPoint": "https://aka.ms/manawindowsdrivers",
+      "pinnable": false,
+      "reason": "The entry point is a redirect that currently resolves to a versioned zip on download.microsoft.com; no published hash or signature policy was verified, so the toolkit does not download or install it.",
+      "operatorChecks": ["Download from the Microsoft entry point on a trusted host", "Verify Authenticode signature of every .sys/.cat/.inf catalog with Get-AuthenticodeSignature (Microsoft publisher, status Valid)", "Install following the readme in the package; reboot and reassess", "Confirm Get-NetAdapter shows Microsoft Azure Network Adapter and counters increment"]
+    }
+  ]
+}

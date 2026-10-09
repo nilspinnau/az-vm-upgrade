@@ -10,7 +10,7 @@ AzureRM is pinned to 4.48.0; the provider lock file is committed.
 |---|---|
 | PowerShell parsing | All module, customer, guest, fixture and integration scripts passed |
 | Configured static analysis | Module, customer, guest and integration scripts passed |
-| Decision/orchestration tests | 68 Pester tests passed; no failures, skips or unrun tests |
+| Decision/orchestration tests | 80 Pester tests passed (12 cover the pinned backend, azure-vm-utils and MANA guidance); no failures, skips or unrun tests. Upstream catalog hashes were also verified against locally fetched copies. No live Azure, guest or backend execution was performed |
 | Guest script syntax | Bash syntax and embedded Python AST parsing passed; no guest script executed |
 | Terraform format/validate | Passed |
 | Installed provider schema | Linux/Windows size/controller and NIC acceleration attributes verified |

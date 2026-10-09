@@ -20,7 +20,9 @@
     "sentinelHash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
     "applicationHealth": {"enum": ["pass", "unknown", "failed"]},
     "accelerationInUse": {"enum": ["pass", "unknown", "failed"]},
-    "manaInUse": {"enum": ["pass", "unknown", "failed"]}
+    "manaInUse": {"enum": ["pass", "unknown", "failed"]},
+    "azureVmUtils": {"enum": ["pass", "unknown", "failed"]},
+    "manaDevicePresent": {"type": "boolean"}
   },
   "additionalProperties": true
 }
