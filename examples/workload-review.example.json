@@ -1,0 +1,8 @@
+{
+  "reviewed": false,
+  "noThirdPartyBootFilters": false,
+  "noClusterOrAppliance": false,
+  "noTemporaryStorageDependencies": false,
+  "requireManaInUse": true,
+  "reference": "REPLACE_WITH_APPROVED_LAB_WORKLOAD_REVIEW"
+}

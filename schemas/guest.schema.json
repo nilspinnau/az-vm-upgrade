@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schemaVersion", "observedAt", "complete", "osProfile", "agentReady", "pendingReboot", "nvmeDriver", "nvmeBoot", "manaDriver", "mellanoxDriver", "actualController", "persistentMounts", "layoutSupported", "storageIdentityHash", "sentinelHash", "applicationHealth", "accelerationInUse", "manaInUse"],
+  "properties": {
+    "schemaVersion": {"const": "guest/1.0"},
+    "observedAt": {"type": "string", "format": "date-time"},
+    "complete": {"type": "boolean"},
+    "osProfile": {"type": "string"},
+    "agentReady": {"type": ["boolean", "null"]},
+    "pendingReboot": {"type": ["boolean", "null"]},
+    "nvmeDriver": {"enum": ["pass", "unknown", "failed"]},
+    "nvmeBoot": {"enum": ["pass", "unknown", "failed"]},
+    "manaDriver": {"enum": ["pass", "unknown", "failed"]},
+    "mellanoxDriver": {"enum": ["pass", "unknown", "failed"]},
+    "actualController": {"enum": ["SCSI", "NVMe", "unknown"]},
+    "persistentMounts": {"type": ["boolean", "null"]},
+    "layoutSupported": {"type": ["boolean", "null"]},
+    "storageIdentityHash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "sentinelHash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "applicationHealth": {"enum": ["pass", "unknown", "failed"]},
+    "accelerationInUse": {"enum": ["pass", "unknown", "failed"]},
+    "manaInUse": {"enum": ["pass", "unknown", "failed"]}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "acceptance/1.0",
+  "planHash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "vmId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/azvm-upgrade-lab-example/providers/Microsoft.Compute/virtualMachines/testvm",
+  "validationFingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+  "accepted": true,
+  "acceptedAt": "2000-01-01T00:00:00Z",
+  "reference": "REPLACE_WITH_POST_VERIFICATION_OWNER_ACCEPTANCE"
+}

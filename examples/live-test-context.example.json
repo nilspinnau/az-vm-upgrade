@@ -1,0 +1,15 @@
+{
+  "planHash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "vmId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/azvm-upgrade-lab-example/providers/Microsoft.Compute/virtualMachines/testvm",
+  "testResourceGroup": "azvm-upgrade-lab-example",
+  "expiresAt": "2000-01-01T00:00:00Z",
+  "budgetLimit": 0,
+  "labOnly": false,
+  "guestConsent": false,
+  "restartApproved": false,
+  "deallocateStartApproved": false,
+  "protectionAccepted": false,
+  "exclusiveWindow": false,
+  "protectionReference": "REPLACE_WITH_APPROVED_RECOVERY_METHOD",
+  "cleanupApproved": false
+}

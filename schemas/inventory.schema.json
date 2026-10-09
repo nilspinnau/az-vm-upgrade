@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schemaVersion", "observedAt", "source", "scopes", "complete", "vms"],
+  "properties": {
+    "schemaVersion": {"const": "inventory/1.0"},
+    "observedAt": {"type": "string", "format": "date-time"},
+    "complete": {"type": "boolean"},
+    "scopes": {"type": "array", "items": {"type": "object", "required": ["subscriptionId", "status", "count", "error"], "properties": {"status": {"enum": ["complete", "denied", "failed"]}}}},
+    "vms": {"type": "array"}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "lifecycle/1.0",
+  "reviewedAt": "2026-10-09T00:00:00Z",
+  "scope": "Curated Azure public-cloud series; absence is not an unaffected claim. Revalidate after 90 days.",
+  "entries": [
+    {"series": "D/Ds v1/v2", "pattern": "^Standard_D[0-9]+s?(_v2)?(_Promo)?$", "retirementDate": "2028-05-01", "growthRestrictedFrom": "2026-07-01", "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "DS v1/v2", "pattern": "^Standard_DS[0-9]+(-[0-9]+)?(_v2)?(_Promo)?$", "retirementDate": "2028-05-01", "growthRestrictedFrom": "2026-07-01", "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "Dv3/Dsv3", "pattern": "^Standard_D[0-9]+s?_v3$", "retirementDate": "2029-11-15", "growthRestrictedFrom": "2026-07-01", "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "Ev3/Esv3", "pattern": "^Standard_E[0-9]+(-[0-9]+)?s?_v3$", "retirementDate": "2029-11-15", "growthRestrictedFrom": "2026-07-01", "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "Av2/Amv2", "pattern": "^Standard_A[0-9]+m?_v2$", "retirementDate": "2028-11-15", "growthRestrictedFrom": "2026-07-01", "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "B v1", "pattern": "^Standard_B[0-9]+[lm]?s$", "retirementDate": "2028-11-15", "growthRestrictedFrom": "2026-07-01", "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "F/Fs/Fsv2", "pattern": "^Standard_F[0-9]+s?(_v2)?$", "retirementDate": "2028-11-15", "growthRestrictedFrom": "2026-07-01", "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "G/Gs", "pattern": "^Standard_GS?[0-9]+(-[0-9]+)?$", "retirementDate": "2028-11-15", "growthRestrictedFrom": "2026-07-01", "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "Ls v1", "pattern": "^Standard_L[0-9]+s$", "retirementDate": "2028-05-01", "growthRestrictedFrom": "2026-07-01", "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "Lsv2", "pattern": "^Standard_L[0-9]+s_v2$", "retirementDate": "2028-11-15", "growthRestrictedFrom": "2026-07-01", "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "M192 v2 named retirements", "pattern": "^Standard_M192i(dms|ds|ms|s)_v2$", "retirementDate": "2027-03-31", "growthRestrictedFrom": null, "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "NVv3/NVv4", "pattern": "^Standard_NV[0-9]+a?s?_v[34]$", "retirementDate": "2026-09-30", "growthRestrictedFrom": null, "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "HC/HBv2/NP", "pattern": "^Standard_(HC[0-9]+rs|HB[0-9]+rs_v2|NP[0-9]+s)$", "retirementDate": "2027-05-31", "growthRestrictedFrom": null, "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "DCsv2", "pattern": "^Standard_DC[0-9]+s_v2$", "retirementDate": "2026-06-30", "growthRestrictedFrom": null, "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"},
+    {"series": "DC/EC confidential child v5", "pattern": "^Standard_[DE]C[0-9]+a(d)?s_cc_v5$", "retirementDate": "2026-09-01", "growthRestrictedFrom": null, "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"}
+  ]
+}

@@ -1,0 +1,15 @@
+Resources
+| where type =~ 'microsoft.compute/virtualmachines'
+| extend size = tostring(properties.hardwareProfile.vmSize),
+    osType = tostring(properties.storageProfile.osDisk.osType),
+    controller = tostring(properties.storageProfile.diskControllerType),
+    image = properties.storageProfile.imageReference,
+    securityType = tostring(properties.securityProfile.securityType),
+    availabilitySet = tostring(properties.availabilitySet.id),
+    scaleSet = tostring(properties.virtualMachineScaleSet.id),
+    proximityPlacementGroup = tostring(properties.proximityPlacementGroup.id),
+    dedicatedHost = tostring(properties.host.id),
+    capacityReservation = tostring(properties.capacityReservation.capacityReservationGroup.id)
+| project id, name, subscriptionId, resourceGroup, location, zones, tags, size,
+    osType, controller, image, securityType, availabilitySet, scaleSet,
+    proximityPlacementGroup, dedicatedHost, capacityReservation

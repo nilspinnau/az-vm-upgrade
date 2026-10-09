@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "planHash", "vmId", "tenantId", "subscriptionId", "targetSize", "targetController", "expiresAt", "testResourceGroup", "labOnly", "downtime", "temporaryDataLoss", "guestCommands", "exclusiveWindow", "requireOwnerAcceptance", "protection"],
+  "properties": {
+    "schemaVersion": {"const": "approval/1.0"},
+    "planHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "vmId": {"type": "string"},
+    "tenantId": {"type": "string"},
+    "subscriptionId": {"type": "string"},
+    "targetSize": {"type": "string", "pattern": "^Standard_[A-Za-z0-9_-]+$"},
+    "targetController": {"enum": ["SCSI", "NVMe"]},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "testResourceGroup": {"type": "string"},
+    "labOnly": {"type": "boolean"},
+    "downtime": {"type": "boolean"},
+    "temporaryDataLoss": {"type": "boolean"},
+    "guestCommands": {"type": "boolean"},
+    "exclusiveWindow": {"type": "boolean"},
+    "requireOwnerAcceptance": {"const": true},
+    "protection": {
+      "type": "object",
+      "required": ["type", "accepted", "reference", "verifiedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"enum": ["application-consistent-backup", "accepted-recovery-method"]},
+        "accepted": {"type": "boolean"},
+        "reference": {"type": "string", "minLength": 1},
+        "verifiedAt": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}

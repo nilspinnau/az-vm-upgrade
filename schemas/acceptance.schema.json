@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "planHash", "vmId", "validationFingerprint", "accepted", "acceptedAt", "reference"],
+  "properties": {
+    "schemaVersion": {"const": "acceptance/1.0"},
+    "planHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "vmId": {"type": "string"},
+    "validationFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "accepted": {"const": true},
+    "acceptedAt": {"type": "string", "format": "date-time"},
+    "reference": {"type": "string", "minLength": 1}
+  }
+}

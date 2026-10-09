@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schemaVersion", "observedAt", "tenantId", "subscriptionId", "vm", "disks", "nics", "instanceView", "skus", "usage", "guest", "checks", "capacity", "fingerprint"],
+  "properties": {
+    "schemaVersion": {"const": "evidence/1.0"},
+    "observedAt": {"type": "string", "format": "date-time"},
+    "tenantId": {"type": "string", "pattern": "^[0-9a-fA-F-]{36}$"},
+    "subscriptionId": {"type": "string", "pattern": "^[0-9a-fA-F-]{36}$"},
+    "vm": {
+      "type": "object",
+      "required": ["id", "location", "hardwareProfile", "storageProfile", "networkProfile"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^/subscriptions/[0-9a-fA-F-]{36}/resource[Gg]roups/[^/]+/providers/[Mm]icrosoft\\.[Cc]ompute/virtual[Mm]achines/[^/]+$"},
+        "location": {"type": "string", "minLength": 1},
+        "hardwareProfile": {"type": "object", "required": ["vmSize"]},
+        "storageProfile": {"type": "object", "required": ["osDisk"]},
+        "networkProfile": {"type": "object", "required": ["networkInterfaces"]}
+      }
+    },
+    "disks": {"type": "array", "items": {"type": "object", "required": ["id"]}},
+    "nics": {"type": "array", "items": {"type": "object", "required": ["id"]}},
+    "instanceView": {"type": "object", "required": ["statuses"]},
+    "skus": {"type": "array"},
+    "usage": {"type": "array"},
+    "guest": {"type": ["object", "null"]},
+    "checks": {"type": "array"},
+    "capacity": {"type": "object", "required": ["status", "detail"]},
+    "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": true
+}

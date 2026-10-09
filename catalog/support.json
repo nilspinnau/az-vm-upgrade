@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "support/1.0",
+  "reviewedAt": "2026-10-09T00:00:00Z",
+  "executionBoundary": "disposable-lab-only",
+  "liveValidatedPaths": [],
+  "labProfiles": [
+    {"pattern": "^ubuntu:(22\\.04|24\\.04):x86_64$", "paths": ["same-interface", "gen2-scsi-nvme"], "status": "offline-tested-only"},
+    {"pattern": "^windows:20348:AMD64$", "paths": ["same-interface", "gen2-scsi-nvme"], "status": "offline-tested-only"}
+  ],
+  "assessmentOnly": ["SUSE/SLES/SAP", "RHEL", "other Windows builds", "Gen1 conversion", "temporary disks", "special placement", "ADE/CMK/confidential configurations", "clustered/certified appliances", "third-party boot/storage filters"],
+  "sources": [
+    "https://learn.microsoft.com/en-us/azure/virtual-machines/nvme-linux",
+    "https://learn.microsoft.com/en-us/azure/virtual-machines/migration/scsi-to-nvme-migration",
+    "https://learn.microsoft.com/en-us/azure/virtual-network/accelerated-networking-mana-overview"
+  ]
+}

@@ -1,0 +1,10 @@
+// Curated discovery subset; the engine applies every anchored pattern in catalog/lifecycle.json.
+// Run with explicit subscription scope. Null/missing properties mean unknown, not disabled.
+Resources
+| where type =~ 'microsoft.compute/virtualmachines'
+| extend size = tostring(properties.hardwareProfile.vmSize)
+| where size matches regex '^Standard_D[0-9]+s?(_v2|_v3)?(_Promo)?$'
+    or size matches regex '^Standard_DS[0-9]+(-[0-9]+)?(_v2)?(_Promo)?$'
+    or size matches regex '^Standard_E[0-9]+(-[0-9]+)?s?_v3$'
+    or size matches regex '^Standard_(A[0-9]+m?_v2|B[0-9]+[lm]?s|F[0-9]+s?(_v2)?|GS?[0-9]+(-[0-9]+)?|L[0-9]+s(_v2)?)$'
+| project id, name, subscriptionId, resourceGroup, location, zones, size, tags

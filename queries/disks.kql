@@ -1,0 +1,15 @@
+Resources
+| where type =~ 'microsoft.compute/virtualmachines'
+| extend attached = array_concat(pack_array(properties.storageProfile.osDisk), properties.storageProfile.dataDisks)
+| mv-expand disk = attached
+| extend diskId = tolower(tostring(disk.managedDisk.id)), lun = disk.lun
+| join kind=leftouter (
+    Resources
+    | where type =~ 'microsoft.compute/disks'
+    | project diskId = tolower(id), tier = sku.name, generation = properties.hyperVGeneration,
+        sizeGB = properties.diskSizeGB, encryption = properties.encryption.type,
+        adeEnabled = properties.encryptionSettingsCollection.enabled,
+        diskControllerTypes = properties.supportedCapabilities.diskControllerTypes
+) on diskId
+| project vmId = id, name, subscriptionId, resourceGroup, diskId, lun, tier, generation,
+    sizeGB, encryption, adeEnabled, diskControllerTypes

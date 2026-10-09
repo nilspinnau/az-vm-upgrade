@@ -1,0 +1,11 @@
+This toolkit is independently implemented. No customer material or code from
+the Azure/SAP-on-Azure-Scripts-and-Utilities repository is included.
+
+Microsoft Learn documentation is linked as factual reference, not copied as
+a bundled conversion utility. The Azure CLI and HashiCorp Terraform/AzureRM
+provider are external dependencies governed by their respective licenses.
+Their binaries are not redistributed in this repository.
+
+The bundled MIT license covers original toolkit code and documentation only.
+Names and trademarks belong to their respective owners. This is not an
+official Microsoft supported product and carries no production support claim.

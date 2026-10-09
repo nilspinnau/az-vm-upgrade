@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schemaVersion", "createdAt", "expiresAt", "vmId", "tenantId", "subscriptionId", "sourceSize", "sourceController", "targetSize", "targetController", "classification", "executionBoundary", "checks", "candidates", "quota", "capacity", "terraform", "evidence", "fingerprint", "hash"],
+  "properties": {
+    "schemaVersion": {"const": "plan/1.0"},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "vmId": {"type": "string"},
+    "tenantId": {"type": "string"},
+    "subscriptionId": {"type": "string"},
+    "sourceSize": {"type": "string"},
+    "sourceController": {"enum": ["SCSI", "NVMe", null]},
+    "targetSize": {"type": ["string", "null"]},
+    "targetController": {"enum": ["SCSI", "NVMe", null]},
+    "classification": {"enum": ["ready", "needs-preparation", "blocked", "requires-rebuild", "requires-application-specific-work", "incomplete-evidence"]},
+    "executionBoundary": {"const": "disposable-lab-only"},
+    "checks": {"type": "array", "items": {"type": "object", "required": ["name", "status", "detail", "source", "observedAt"], "properties": {"status": {"enum": ["pass", "disabled", "unknown", "stale", "unsupported", "denied", "failed", "required"]}}}},
+    "candidates": {"type": "array"},
+    "quota": {"type": "object"},
+    "capacity": {"type": "object"},
+    "terraform": {"type": "object"},
+    "evidence": {"type": "object"},
+    "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": true
+}

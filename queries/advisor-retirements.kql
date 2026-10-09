@@ -1,0 +1,16 @@
+// Engine-rendered template. State is unknown until an observed property path is supplied.
+// Advisor can identify retiring VM features/extensions, not necessarily a retiring VM SKU.
+advisorresources
+| where type =~ 'microsoft.advisor/recommendations'
+| where properties.extendedProperties.recommendationSubCategory == 'ServiceUpgradeAndRetirement'
+| where isempty(properties.tracked)
+| extend resourceId = tolower(tostring(properties.resourceMetadata.resourceId)),
+    serviceId = tostring(properties.recommendationTypeId),
+    stateRaw = {{stateExpression}}
+| extend state = iff(stateRaw in ('active', 'completed', 'postponed', 'dismissed'), stateRaw, 'unknown')
+| where state in (dynamic({{states}}))
+| join kind=inner (
+{{vmQuery}}
+| project resourceId = tolower(id)
+) on resourceId
+| project id, subscriptionId, resourceGroup, resourceId, serviceId, state

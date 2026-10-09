@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "approval/1.0",
+  "planHash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "vmId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/azvm-upgrade-lab-example/providers/Microsoft.Compute/virtualMachines/testvm",
+  "tenantId": "00000000-0000-0000-0000-000000000000",
+  "subscriptionId": "00000000-0000-0000-0000-000000000000",
+  "targetSize": "Standard_D2s_v6",
+  "targetController": "NVMe",
+  "expiresAt": "2000-01-01T00:00:00Z",
+  "testResourceGroup": "azvm-upgrade-lab-example",
+  "labOnly": false,
+  "downtime": false,
+  "temporaryDataLoss": false,
+  "guestCommands": false,
+  "exclusiveWindow": false,
+  "requireOwnerAcceptance": true,
+  "protection": {
+    "type": "accepted-recovery-method",
+    "accepted": false,
+    "reference": "REPLACE_WITH_APPROVED_RECOVERY_PROCEDURE",
+    "verifiedAt": "2000-01-01T00:00:00Z"
+  }
+}

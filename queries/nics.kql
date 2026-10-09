@@ -1,0 +1,14 @@
+Resources
+| where type =~ 'microsoft.compute/virtualmachines'
+| mv-expand nic = properties.networkProfile.networkInterfaces
+| extend nicId = tolower(tostring(nic.id))
+| join kind=leftouter (
+    Resources
+    | where type =~ 'microsoft.network/networkinterfaces'
+    | project nicId = tolower(id), nicName = name,
+        acceleratedNetworking = properties.enableAcceleratedNetworking,
+        ipForwarding = properties.enableIPForwarding,
+        ipConfigurations = properties.ipConfigurations
+) on nicId
+| project vmId = id, name, subscriptionId, resourceGroup, nicId, nicName,
+    acceleratedNetworking, ipForwarding, ipConfigurations

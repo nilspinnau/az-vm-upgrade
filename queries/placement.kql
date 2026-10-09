@@ -1,0 +1,10 @@
+Resources
+| where type =~ 'microsoft.compute/virtualmachines'
+| project id, name, subscriptionId, resourceGroup, location, zones,
+    availabilitySet = properties.availabilitySet.id,
+    scaleSet = properties.virtualMachineScaleSet.id,
+    proximityPlacementGroup = properties.proximityPlacementGroup.id,
+    host = properties.host.id, hostGroup = properties.hostGroup.id,
+    reservation = properties.capacityReservation.capacityReservationGroup.id,
+    priority = properties.priority,
+    ephemeralOs = properties.storageProfile.osDisk.diffDiskSettings
