@@ -128,7 +128,8 @@ function Invoke-GuestPreparation {
         if ($Action -ne 'status' -and $journal.status -eq 'in-progress') {
             throw 'A previous preparation call was interrupted; its outcome is unknown. Run -Action status and review before any retry.'
         }
-        $live = Get-VmEvidence -VmId $Preparation.vmId
+        $live = Get-VmEvidence -VmId $Preparation.vmId -ObservationPath "$journalPath.pre-$Action"
+        Write-UpgradeJson $live "$journalPath.pre-$Action.json"
         if ($live.vm.id -ine $Preparation.vmId -or $live.subscriptionId -ine $identity.subscriptionId) { throw 'Live VM identity does not match the preparation request.' }
         if ($Action -eq 'apply' -and $live.fingerprint -cne $Preparation.expectedFingerprint) { throw 'Live resources changed since the plan was approved; reassess.' }
         if (@($live.instanceView.statuses | Where-Object code -EQ 'PowerState/running').Count -ne 1) { throw 'VM must be running for guest preparation.' }
@@ -144,6 +145,7 @@ function Invoke-GuestPreparation {
             $result = Invoke-UpgradeAz @('vm', 'run-command', 'invoke', '--ids', $Preparation.vmId, '--subscription', $identity.subscriptionId,
                 '--command-id', $commandId, '--scripts', "@$temporary") -TimeoutSeconds 1800
         } finally { Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue }
+        Write-UpgradeJson $result "$journalPath.$Action.run-command.json"
         $manifest = Read-PreparationManifest $result $Preparation $Action
         $journal.manifest = $manifest
         $journal.pendingAction = $null
@@ -168,7 +170,8 @@ function Restart-VmForPreparation {
     if (-not (Test-Path -LiteralPath $journalPath)) { throw 'No preparation journal exists.' }
     $journal = Read-UpgradeJson $journalPath
     if ($journal.status -notin @('applied-awaiting-reboot', 'rolled-back-awaiting-reboot')) { throw "Journal state $($journal.status) does not permit a preparation restart." }
-    $live = Get-VmEvidence -VmId $Preparation.vmId
+    $live = Get-VmEvidence -VmId $Preparation.vmId -ObservationPath "$journalPath.pre-restart"
+    Write-UpgradeJson $live "$journalPath.pre-restart.json"
     if ((Get-PreparationModelHash $live) -cne $Preparation.expectedModelHash) { throw 'Azure configuration changed during preparation; stop and reassess.' }
     if (-not $PSCmdlet.ShouldProcess($Preparation.vmId, 'Restart VM (no deallocate, resize or controller change)')) { return }
     $script:ExecutingVmId = $Preparation.vmId
@@ -178,7 +181,7 @@ function Restart-VmForPreparation {
     $journal.pendingOperation = @{ name = 'restart'; requestId = $requestId; at = [DateTimeOffset]::UtcNow.ToString('o') }
     Write-UpgradeJson $journal $journalPath
     Invoke-ArmPowerAction -VmId $Preparation.vmId -Action restart -RequestId $requestId
-    Wait-VmState -VmId $Preparation.vmId -PowerState running | Out-Null
+    Wait-VmState -VmId $Preparation.vmId -PowerState running -ObservationPath "$journalPath.restart-poll.json" | Out-Null
     $journal.pendingOperation = $null
     $journal.status = $journal.status -replace 'awaiting-reboot', 'restarted-awaiting-reassessment'
     $journal.events += @{ at = [DateTimeOffset]::UtcNow.ToString('o'); action = 'restart'; state = $journal.status }

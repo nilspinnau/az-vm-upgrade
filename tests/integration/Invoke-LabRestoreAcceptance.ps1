@@ -65,10 +65,16 @@ if (Test-Path -LiteralPath $OutputPath) { throw 'Preserve the existing restorati
         Write-UpgradeJson $result $outputPath
     }
     function Az($arguments) { Invoke-UpgradeAz (@($arguments) + @('--subscription', $identity.subscriptionId)) }
+    function Observe($name, $value) {
+        $result.observationCount = 1 + [int]$result.observationCount
+        Write-UpgradeJson @{ observedAt = [DateTimeOffset]::UtcNow.ToString('o'); response = $value } "$outputPath.$($result.observationCount).$name.json"
+    }
     try {
         $existing = @(Az @('resource', 'list', '--resource-group', $identity.resourceGroup))
+        Observe 'existing-resources' $existing
         if (@($existing | Where-Object { $_.id -in $targets }).Count) { throw 'A restoration target already exists; never overwrite it.' }
-        $original = Get-VmEvidence -VmId $plan.vmId -GuestConsent -GuestNetworkProbeConsent
+        $original = Get-VmEvidence -VmId $plan.vmId -GuestConsent -GuestNetworkProbeConsent -ObservationPath "$outputPath.original"
+        Observe 'original' $original
         Test-PostUpgradeGuest $plan $original
         if ($original.vm.securityProfile.securityType -and $original.vm.securityProfile.securityType -ne 'Standard') { throw 'This lab restore harness supports Standard security only.' }
         if ($original.vm.securityProfile.encryptionAtHost -ne $true -or $original.vm.storageProfile.dataDisks.Count -ne 1 -or $original.nics.Count -ne 1) {
@@ -81,6 +87,7 @@ if (Test-Path -LiteralPath $OutputPath) { throw 'Preserve the existing restorati
             throw 'Recovery requires an unrestricted source SKU in the original region and a non-zonal lab.'
         }
         $provider = Az @('provider', 'show', '--namespace', 'Microsoft.Compute')
+        Observe 'compute-provider' $provider
         $vmType = @($provider.resourceTypes | Where-Object resourceType -EQ 'virtualMachines')
         if ($vmType.Count -ne 1 -or '2025-11-01' -notin $vmType[0].apiVersions) {
             throw 'The documented explicit Standard-security recovery API is unavailable; do not register a feature or change security.'
@@ -96,17 +103,19 @@ if (Test-Path -LiteralPath $OutputPath) { throw 'Preserve the existing restorati
         )) {
             if (-not $binding.snapshot.StartsWith("$prefix/Microsoft.Compute/snapshots/", [StringComparison]::OrdinalIgnoreCase)) { throw 'Snapshot outside approved group.' }
             $snapshot = Invoke-ArmRead $binding.snapshot '2024-03-02'
+            Observe 'snapshot' $snapshot
             if ($snapshot.properties.provisioningState -ne 'Succeeded' -or $snapshot.properties.creationData.sourceResourceId -ine $binding.disk -or
                 $snapshot.properties.encryption.type -ne 'EncryptionAtRestWithPlatformKey') { throw 'Exact platform-key snapshot provenance not proved.' }
         }
         $nic = Invoke-ArmRead $original.nics[0].id '2024-05-01'
+        Observe 'source-nic' $nic
         if ($nic.properties.ipConfigurations.Count -ne 1 -or $nic.properties.ipConfigurations[0].properties.publicIPAddress -or
             -not $nic.properties.networkSecurityGroup.id) { throw 'Original private NIC/NSG topology is not proved.' }
         Write-UpgradeJson $result $outputPath
         Assert-Window
         Az @('vm', 'deallocate', '--ids', $plan.vmId) | Out-Null
         $deallocated = $true
-        Wait-VmState $plan.vmId deallocated | Out-Null
+        Wait-VmState $plan.vmId deallocated -ObservationPath "$outputPath.original-deallocate.json" | Out-Null
         Step 'original-deallocated' 'Only one VM is allowed to run during the sequential restore exercise.'
         $tags = @('--tags', 'az-vm-upgrade-disposable=true', "az-vm-upgrade-restore-run=$marker")
         foreach ($disk in @(
@@ -115,14 +124,16 @@ if (Test-Path -LiteralPath $OutputPath) { throw 'Preserve the existing restorati
         )) {
             Assert-Window
             $created.Add($disk.id)
-            Az (@('disk', 'create', '--resource-group', $identity.resourceGroup, '--name', $disk.name, '--location', $original.vm.location,
-                '--source', $disk.snapshot, '--sku', 'StandardSSD_LRS') + $tags) | Out-Null
+            $response = Az (@('disk', 'create', '--resource-group', $identity.resourceGroup, '--name', $disk.name, '--location', $original.vm.location,
+                '--source', $disk.snapshot, '--sku', 'StandardSSD_LRS') + $tags)
+            Observe 'disk-create' $response
         }
         Assert-Window
         $created.Add($targets[1])
-        Az (@('network', 'nic', 'create', '--resource-group', $identity.resourceGroup, '--name', $context.nicName,
+        $response = Az (@('network', 'nic', 'create', '--resource-group', $identity.resourceGroup, '--name', $context.nicName,
             '--location', $original.vm.location, '--subnet', $nic.properties.ipConfigurations[0].properties.subnet.id,
-            '--network-security-group', $nic.properties.networkSecurityGroup.id, '--accelerated-networking', 'true') + $tags) | Out-Null
+            '--network-security-group', $nic.properties.networkSecurityGroup.id, '--accelerated-networking', 'true') + $tags)
+        Observe 'nic-create' $response
         Assert-Window
         $created.Add($targets[0])
         # Older CLI create templates require a feature for explicit Standard security.
@@ -143,10 +154,11 @@ if (Test-Path -LiteralPath $OutputPath) { throw 'Preserve the existing restorati
         }
         $requestPath = [IO.Path]::GetFullPath("$outputPath.request.json")
         Write-UpgradeJson $request $requestPath
-        Az @('rest', '--method', 'put', '--url', "https://management.azure.com$($targets[0])?api-version=2025-11-01",
-            '--body', "@$requestPath") | Out-Null
-        Wait-VmState $targets[0] running $plan.sourceSize SCSI | Out-Null
-        $restored = Get-VmEvidence -VmId $targets[0] -GuestConsent -GuestNetworkProbeConsent
+        $response = Az @('rest', '--method', 'put', '--url', "https://management.azure.com$($targets[0])?api-version=2025-11-01",
+            '--body', "@$requestPath")
+        Observe 'vm-create' $response
+        Wait-VmState $targets[0] running $plan.sourceSize SCSI -ObservationPath "$outputPath.recovery-start.json" | Out-Null
+        $restored = Get-VmEvidence -VmId $targets[0] -GuestConsent -GuestNetworkProbeConsent -ObservationPath "$outputPath.restored"
         Write-UpgradeJson $restored "$outputPath.evidence.json"
         Assert-LabRestoredEvidence $plan $restored
         Step 'vm-restored-and-verified' 'Actual boot from copied OS snapshot and unchanged managed-data checksum; host encryption explicitly enabled. Not application-consistent backup certification.'
@@ -158,6 +170,7 @@ if (Test-Path -LiteralPath $OutputPath) { throw 'Preserve the existing restorati
         try {
             foreach ($id in $targets | Where-Object { $created.Contains($_) }) {
                 $resource = @(Az @('resource', 'list', '--resource-group', $identity.resourceGroup) | Where-Object { $_.id -ieq $id })
+                Observe 'cleanup-ownership' $resource
                 if ($resource.Count) {
                     if ($resource.Count -ne 1 -or $resource[0].tags.'az-vm-upgrade-restore-run' -cne $marker) { throw 'Cleanup ownership marker mismatch; stop.' }
                     if ($id -ieq $targets[0]) { Az @('vm', 'delete', '--ids', $id, '--yes') | Out-Null }
@@ -168,14 +181,16 @@ if (Test-Path -LiteralPath $OutputPath) { throw 'Preserve the existing restorati
             $cleanupDeadline = [DateTimeOffset]::UtcNow.AddMinutes(5)
             do {
                 $remaining = @(Az @('resource', 'list', '--resource-group', $identity.resourceGroup) | Where-Object { $_.id -in $targets })
+                Observe 'cleanup-absence' $remaining
                 if (-not $remaining.Count) { break }
                 Start-Sleep -Seconds 5
             } while ([DateTimeOffset]::UtcNow -lt $cleanupDeadline)
             if ($remaining.Count) { throw 'Recovery resources remain; do not start a second running VM.' }
             if ($deallocated) {
                 Az @('vm', 'start', '--ids', $plan.vmId) | Out-Null
-                Wait-VmState $plan.vmId running $plan.targetSize $plan.targetController | Out-Null
-                $post = Get-VmEvidence -VmId $plan.vmId -GuestConsent -GuestNetworkProbeConsent
+                Wait-VmState $plan.vmId running $plan.targetSize $plan.targetController -ObservationPath "$outputPath.original-start.json" | Out-Null
+                $post = Get-VmEvidence -VmId $plan.vmId -GuestConsent -GuestNetworkProbeConsent -ObservationPath "$outputPath.original-restart"
+                Observe 'original-restart' $post
                 Test-PostUpgradeGuest $plan $post
                 Step 'recovery-cleanup-and-original-reverified' 'Exact marked recovery resources removed; original upgraded VM restarted and data/security/connectivity reverified.'
             }
@@ -183,8 +198,8 @@ if (Test-Path -LiteralPath $OutputPath) { throw 'Preserve the existing restorati
             $result.status = 'failed'; $result.cleanupError = $_.Exception.Message
             throw
         } finally {
-            Write-UpgradeJson $result $outputPath
-            $lock.Dispose()
+            try { Write-UpgradeJson $result $outputPath }
+            finally { $lock.Dispose() }
         }
     }
 } $plan $context $OutputPath $JournalDirectory

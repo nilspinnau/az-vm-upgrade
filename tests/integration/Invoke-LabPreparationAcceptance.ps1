@@ -29,11 +29,14 @@ Write-UpgradeJson $result $OutputPath
 $step = { param($name, $status, $detail) $result.steps += @{ at = [DateTimeOffset]::UtcNow.ToString('o'); name = $name; status = $status; detail = $detail }; Write-UpgradeJson $result $OutputPath }
 try {
     $manifest = Invoke-GuestPreparation -Preparation $preparation -Action apply -GuestConsent -JournalDirectory $JournalDirectory -Confirm:$false
+    Write-UpgradeJson $manifest "$OutputPath.apply.json"
     & $step 'apply' 'pass' "changes=$(@($manifest.changes).Count)"
     Restart-VmForPreparation -Preparation $preparation -RebootConsent -JournalDirectory $JournalDirectory -Confirm:$false | Out-Null
     & $step 'restart' 'pass' 'restart only'
-    $post = Get-VmEvidence -VmId $preparation.vmId -GuestConsent
+    $post = Get-VmEvidence -VmId $preparation.vmId -GuestConsent -ObservationPath "$OutputPath.reassessment"
+    Write-UpgradeJson $post "$OutputPath.reassessment.json"
     $outcome = Test-PreparationOutcome -Preparation $preparation -Manifest $manifest -PostEvidence $post
+    Write-UpgradeJson $outcome "$OutputPath.outcome.json"
     & $step 'reassessment' $outcome.status (($outcome.checks | Where-Object status -EQ 'failed' | ForEach-Object name) -join ',')
     if ($outcome.status -ne 'accepted') { throw 'Post-preparation reassessment rejected.' }
     if (-not $preparation.preState.sentinelHash -or $post.guest.sentinelHash -cne $preparation.preState.sentinelHash -or
@@ -51,9 +54,11 @@ try {
     } else { & $step 'terraform-no-op' 'skipped' 'no evidence supplied' }
     if ($context.rollbackApproved -eq $true) {
         $rb = Invoke-GuestPreparation -Preparation $preparation -Action rollback -GuestConsent -RollbackAcknowledged -JournalDirectory $JournalDirectory -Confirm:$false
+        Write-UpgradeJson $rb "$OutputPath.rollback.json"
         & $step 'rollback-command' 'pass' "changes=$(@($rb.changes).Count); this alone does not prove restoration"
         Restart-VmForPreparation -Preparation $preparation -RebootConsent -JournalDirectory $JournalDirectory -Confirm:$false | Out-Null
-        $restored = Get-VmEvidence -VmId $preparation.vmId -GuestConsent
+        $restored = Get-VmEvidence -VmId $preparation.vmId -GuestConsent -ObservationPath "$OutputPath.rollback-reboot"
+        Write-UpgradeJson $restored "$OutputPath.rollback-reboot.json"
         $modelHash = & (Get-Module AzVmUpgrade) { param($evidence) Get-PreparationModelHash $evidence } $restored
         if ($modelHash -cne $preparation.expectedModelHash) { throw 'Azure configuration or encryption changed during rollback reboot.' }
         if (-not $restored.guest.bootId -or $restored.guest.bootId -ceq $post.guest.bootId -or

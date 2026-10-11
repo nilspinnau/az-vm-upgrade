@@ -201,6 +201,29 @@ correctness static rules, Pester decision/orchestration fixtures, exact pinned
 provider schema checks, Terraform format/validate and mocked profile tests.
 It does not call guest code or Azure. Offline mocks are never labeled live success.
 
+### Evidence-before-assertion readiness checklist
+
+| Stage | Retention and offline proof | Remaining live gate |
+|---|---|---|
+| Test initialization | Exact IMDS/udev/expected inputs emitted before refusal; two positive and sixteen refusal fixtures. Raw Run Command must be retained by the caller | Resize-06 actual IMDS response is irrecoverable; fresh independent identity must pass before formatting |
+| Guest probes | Optional `Get-VmEvidence -ObservationPath` retains account/model/instance view, raw guest Run Command and assembled evidence before parsing/schema/health rejection; no optional path means existing read-only callers keep their behavior | Real guest completeness, boot, identity and networking |
+| Preparation and rollback | Actual harness body mocked through success, rejected reassessment, health, no-op and rollback preservation; raw preparation responses and fresh reassessment/rollback probes retained before validation | Real reboot/rollback/data preservation on the new exact scope |
+| Migration | Same-interface state machine mocked through completion without OS capability mutation; gate, ARM poll/async/disk-capability, validation and reconciliation observations persisted before assertions | Allocation, resize health and real unchanged data/network |
+| Recovery | Actual same-interface harness body mocked through copied-disk/VM creation, sequential cleanup and original restart; original health, provider/API, snapshot, NIC, restored guest, original restart and cleanup-ownership failures retain observations | Real snapshot provenance/boot/health and original restart |
+| Terraform | Six provider-mocked profiles; input plan retained by caller and engine retains reconciliation JSON before rejection | Real normal source/target no-op |
+| Exact group teardown | Prior lab failure finalizers independently verified absent groups; recovery offline ordering prohibits original start before marked-resource cleanup | Future paid scope must again prove exact group absence |
+
+This is **component control-flow proof**, not a mocked execution of the entire
+private top-level Terraform/deployment/formatting/group-teardown lab wrapper
+as one end-to-end program. CLI transport failures with no response remain
+exceptions, not fabricated observations. Offline tests cannot establish Azure
+allocation, metadata propagation, billing or production support.
+Preparation/recovery observations use protected sidecars alongside their
+outputs; engine observations remain in the journal or adjacent sidecars.
+Any write failure stops progression and preserves unpublished evidence;
+do not turn on mutation replay to compensate. Recovery lock release occurs
+even if final result publication fails.
+
 ## Local evidence publication failures
 
 JSON evidence is written to a unique same-directory temporary file, flushed

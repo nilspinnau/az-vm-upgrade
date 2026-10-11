@@ -497,6 +497,21 @@ InModuleScope AzVmUpgrade {
             $again.phase | Should -Be 'reconciled'
             Should -Invoke Invoke-MinimalArmPatch -Times 2 -Exactly
         }
+        It 'executes the same-interface state machine without OS capability update' {
+            $script:plan.targetController = 'SCSI'
+            $script:plan.sourceController = 'SCSI'
+            $script:approval.targetController = 'SCSI'
+            $unsigned = @{} + $script:plan; $unsigned.Remove('hash')
+            $script:plan.hash = Get-UpgradeHash $unsigned
+            $script:approval.planHash = $script:plan.hash
+            Write-UpgradeJson $script:plan $script:planPath
+            Write-UpgradeJson $script:approval $script:approvalPath
+            $journal = Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false
+            $journal.phase | Should -Be 'reconciled'
+            $journal.lastEvidence.vm.storageProfile.diskControllerType | Should -Be 'SCSI'
+            Should -Invoke Invoke-MinimalArmPatch -Times 1 -Exactly
+            Should -Invoke Invoke-ArmPowerAction -Times 2 -Exactly
+        }
         It 'rejects altered plans and approvals without disruptive commands' {
             $script:plan.targetSize = 'Standard_D4s_v6'
             Write-UpgradeJson $script:plan $script:planPath

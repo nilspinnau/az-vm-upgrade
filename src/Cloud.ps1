@@ -106,14 +106,18 @@ function Get-BoundedVmModel {
 
 function Get-VmEvidence {
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$VmId, [switch]$GuestConsent, [switch]$GuestNetworkProbeConsent)
+    param([Parameter(Mandatory)][string]$VmId, [switch]$GuestConsent, [switch]$GuestNetworkProbeConsent,
+        [string]$ObservationPath)
     if ($GuestNetworkProbeConsent -and -not $GuestConsent) { throw 'Guest network testing also requires guest-command consent.' }
     $identity = Get-VmIdentity $VmId
     $account = Invoke-UpgradeAz @('account','show','--subscription',$identity.subscriptionId)
+    if ($ObservationPath) { Write-UpgradeJson $account "$ObservationPath.account.json" }
     if ($account.id -ne $identity.subscriptionId) { throw 'Subscription identity mismatch.' }
     if ($account.environmentName -ne 'AzureCloud') { throw 'This release supports Azure public cloud only.' }
     $raw = Invoke-ArmRead $VmId '2024-07-01'
+    if ($ObservationPath) { Write-UpgradeJson $raw "$ObservationPath.vm.json" }
     $instance = Invoke-ArmRead "$VmId/instanceView" '2024-07-01'
+    if ($ObservationPath) { Write-UpgradeJson $instance "$ObservationPath.instance-view.json" }
     $vm = Get-BoundedVmModel $raw
     $checks = [Collections.Generic.List[object]]::new()
     try {
@@ -184,7 +188,8 @@ function Get-VmEvidence {
     }
     $guest = $null
     if ($GuestConsent) {
-        try { $guest = Invoke-VmGuestProbe -VmId $VmId -OsType $vm.storageProfile.osDisk.osType -NetworkProbeConsent:$GuestNetworkProbeConsent }
+        try { $guest = Invoke-VmGuestProbe -VmId $VmId -OsType $vm.storageProfile.osDisk.osType -NetworkProbeConsent:$GuestNetworkProbeConsent -ObservationPath:$ObservationPath }
+        catch [IO.IOException], [UnauthorizedAccessException] { throw }
         catch { $checks.Add((New-Check 'guest' failed $_.Exception.Message 'Run Command')) }
     } else { $checks.Add((New-Check 'guest' unknown 'Not collected: guest invocation requires explicit consent.' 'Run Command')) }
     $evidence = @{
@@ -200,13 +205,15 @@ function Get-VmEvidence {
         capacity = @{ status = 'unknown'; detail = 'Quota and advertised SKU availability do not guarantee allocation.' }
         fingerprint = $null
     }
+    if ($ObservationPath) { Write-UpgradeJson $evidence "$ObservationPath.evidence.json" }
     $evidence.fingerprint = Get-ConfigurationFingerprint $evidence
     Test-UpgradeDocument $evidence evidence | Out-Null
     return $evidence
 }
 
 function Invoke-VmGuestProbe {
-    param([string]$VmId, [ValidateSet('Linux','Windows')][string]$OsType, [switch]$NetworkProbeConsent)
+    param([string]$VmId, [ValidateSet('Linux','Windows')][string]$OsType, [switch]$NetworkProbeConsent,
+        [string]$ObservationPath)
     $identity = Get-VmIdentity $VmId
     $file = if ($OsType -eq 'Linux') { 'linux-probe.sh' } else { 'windows-probe.ps1' }
     $commandId = if ($OsType -eq 'Linux') { 'RunShellScript' } else { 'RunPowerShellScript' }
@@ -225,6 +232,7 @@ function Invoke-VmGuestProbe {
     } finally {
         if ($temporary -and (Test-Path -LiteralPath $temporary)) { Remove-Item -LiteralPath $temporary }
     }
+    if ($ObservationPath) { Write-UpgradeJson $result "$ObservationPath.run-command.json" }
     $stdout = Get-RunCommandStdout $result
     # Run Command output is bounded by Azure; markers distinguish truncation from valid evidence.
     $match = [regex]::Match($stdout, '(?s)AZVM_EVIDENCE_BEGIN\s*(\{.*?\})\s*AZVM_EVIDENCE_END')

@@ -26,11 +26,22 @@ function Assert-UpgradeApproval {
 }
 
 function Wait-VmState {
-    param([string]$VmId, [string]$PowerState, [string]$Size, [string]$Controller, [int]$TimeoutSeconds = 600)
+    param([string]$VmId, [string]$PowerState, [string]$Size, [string]$Controller, [int]$TimeoutSeconds = 600,
+        [string]$ObservationPath)
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
     do {
         $model = Invoke-ArmRead $VmId '2024-07-01'
         $instance = Invoke-ArmRead "$VmId/instanceView" '2024-07-01'
+        if ($ObservationPath) {
+            Write-UpgradeJson @{ observedAt = [DateTimeOffset]::UtcNow.ToString('o'); vmId = $VmId
+                expectedPowerState = $PowerState; expectedSize = $Size; expectedController = $Controller
+                model = $model; instanceView = $instance } $ObservationPath
+        }
+        if ($script:MutationJournal -and $script:MutationJournalPath) {
+            $script:MutationJournal.pollEvidence = @{ model = $model; instanceView = $instance
+                observedAt = [DateTimeOffset]::UtcNow.ToString('o') }
+            Write-UpgradeJson $script:MutationJournal $script:MutationJournalPath
+        }
         $provisioning = $model.properties.provisioningState
         if ($provisioning -eq 'Failed' -or @($instance.statuses | Where-Object code -EQ 'ProvisioningState/failed').Count) {
             throw 'Azure reports failed VM provisioning; inspect journal and recover manually.'
@@ -112,6 +123,10 @@ function Invoke-ArmMutation {
         if ([DateTimeOffset]::UtcNow.AddSeconds($retryAfter) -gt $deadline) { break }
         Start-Sleep -Seconds $retryAfter
         $poll = Invoke-ArmHttpRequest -Uri $pollUri -Method GET -Token $auth.accessToken -Headers @{}
+        if ($script:MutationJournal -and $script:MutationJournalPath) {
+            $script:MutationJournal.asyncPollEvidence = $poll
+            Write-UpgradeJson $script:MutationJournal $script:MutationJournalPath
+        }
         $state = if ($statusEnvelope) { $poll.body.status } else { $poll.body.properties.provisioningState }
         if ($state -in @('Failed','Canceled','Cancelled')) { throw "Azure asynchronous operation $state. Inspect the recorded operation IDs and accepted recovery method." }
         if ($state -eq 'Succeeded' -or (-not $statusEnvelope -and $poll.statusCode -in @(200,204) -and -not $state)) { return $initial.body }
@@ -135,7 +150,10 @@ function Invoke-ArmPowerAction {
 function Assert-LiveUpgradeGate {
     param($Plan, $Approval, $Journal, [switch]$Guest)
     Assert-UpgradeApproval $Plan $Approval
-    $live = Get-VmEvidence -VmId $Plan.vmId -GuestConsent:$Guest -GuestNetworkProbeConsent:($Guest -and $Plan.workloadReview.guestNetworkProbeConsent -eq $true)
+    $observationPath = if ($script:MutationJournalPath) { "$script:MutationJournalPath.gate-$($Journal.events.Count)" } else { $null }
+    $live = Get-VmEvidence -VmId $Plan.vmId -GuestConsent:$Guest -GuestNetworkProbeConsent:($Guest -and $Plan.workloadReview.guestNetworkProbeConsent -eq $true) -ObservationPath $observationPath
+    $Journal.gateEvidence = $live
+    if ($script:MutationJournalPath) { Write-UpgradeJson $Journal $script:MutationJournalPath }
     Assert-UpgradeSecurityPreserved $Plan.evidence $live
     if ($live.tenantId -ine $Approval.tenantId -or $live.subscriptionId -ine $Approval.subscriptionId) { throw 'Azure account context changed.' }
     if ((Get-Field $live.vm 'tags.az-vm-upgrade-disposable') -ne 'true') { throw 'Disposable tag removed; stop.' }
@@ -309,6 +327,8 @@ function Invoke-VmUpgrade {
                     $deadline = [DateTimeOffset]::UtcNow.AddMinutes(10)
                     do {
                         $disk = Invoke-ArmRead $osDisk[0].id '2024-03-02'
+                        $journal.diskCapabilityEvidence = $disk
+                        Write-UpgradeJson $journal $journalPath
                         if ($disk.properties.provisioningState -eq 'Failed') { throw 'OS disk capability update failed.' }
                         if ($disk.properties.provisioningState -eq 'Succeeded' -and $disk.properties.supportedCapabilities.diskControllerTypes -match 'NVMe') { break }
                         Start-Sleep -Seconds 5
@@ -340,7 +360,7 @@ function Invoke-VmUpgrade {
         }
         if ($journal.phase -eq 'started') {
             Assert-UpgradeApproval $plan $approval
-            $live = Get-VmEvidence -VmId $plan.vmId -GuestConsent -GuestNetworkProbeConsent:($plan.workloadReview.guestNetworkProbeConsent -eq $true)
+            $live = Get-VmEvidence -VmId $plan.vmId -GuestConsent -GuestNetworkProbeConsent:($plan.workloadReview.guestNetworkProbeConsent -eq $true) -ObservationPath "$journalPath.validation"
             $journal.validationEvidence = $live
             Write-UpgradeJson $journal $journalPath
             if ($live.fingerprint -cne $journal.expectedFingerprint) { throw 'Unexpected configuration drift before validation.' }
@@ -352,13 +372,16 @@ function Invoke-VmUpgrade {
             if ($plan.terraform.managed) {
                 if (-not $TerraformReconciliationPath) { throw 'Guest verified; provide a clean normal Terraform plan JSON to reconcile with -Resume. Do not apply an obsolete plan.' }
                 $tfPlan = Read-UpgradeJson $TerraformReconciliationPath
+                Write-UpgradeJson $tfPlan "$journalPath.terraform-reconciliation.json"
                 $result = Test-TerraformUpgradePlan -Plan $tfPlan -Mapping $plan.terraform.check.mapping -VmId $plan.vmId `
                     -TargetSize $plan.targetSize -Controller $plan.targetController -Reconciliation `
                     -ExpectedEncryptionAtHost (Get-Field $plan.evidence.vm 'securityProfile.encryptionAtHost')
                 if ($result.status -ne 'pass') { throw $result.detail }
                 $journal.terraformPlanHash = Get-UpgradeHash $tfPlan
             }
-            $live = Get-VmEvidence -VmId $plan.vmId -GuestConsent -GuestNetworkProbeConsent:($plan.workloadReview.guestNetworkProbeConsent -eq $true)
+            $live = Get-VmEvidence -VmId $plan.vmId -GuestConsent -GuestNetworkProbeConsent:($plan.workloadReview.guestNetworkProbeConsent -eq $true) -ObservationPath "$journalPath.reconciliation"
+            $journal.reconciliationEvidence = $live
+            Write-UpgradeJson $journal $journalPath
             if ($live.fingerprint -cne $journal.expectedFingerprint) { throw 'Unexpected drift during reconciliation.' }
             Test-PostUpgradeGuest $plan $live
             Save-UpgradePhase $journal $journalPath 'reconciled' $live
