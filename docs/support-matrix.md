@@ -29,7 +29,7 @@ Live observations are scoped to the exact disposable profile, never a blanket pr
 
 | Upgrade-cycle area | Status | Notes |
 |---|---|---|
-| Pre-mutation protection and proven restore | Partial live | Exact synthetic snapshot copies booted on a private host-encrypted SCSI recovery VM; UUID/checksum/health passed. Corrected harness needs a fresh complete run; not app-consistent backup certification or an original-SKU allocation guarantee |
+| Pre-mutation protection and proven restore | Partial live | Corrected full harness passed on exact Ubuntu 24.04 AMD profile: synthetic LRS snapshot copies booted on private host-encrypted SCSI recovery VM; UUID/checksum/health passed. Not app-consistent backup certification or an original-SKU allocation guarantee |
 | Image/OS/kernel support | Partial | Ubuntu 22.04/24.04 and Windows Server 2022 probed; others assessment-only; no generic kernel gating |
 | Gen1/Gen2/rebuild | Blocked by design | Detected; separate rebuild |
 | Trusted Launch / ADE / CMK | Blocked by design | Detected and explained |
@@ -38,7 +38,7 @@ Live observations are scoped to the exact disposable profile, never a blanket pr
 | NIC acceleration, MANA actual use, connectivity | Partial | Capability vs device vs VF traffic reported separately; Windows driver install automated only for an operator-supplied, hash- and Microsoft-signature-verified zip; Linux MANA detect-only |
 | azure-vm-utils / stable device paths | Partial | Detected; install automated for Ubuntu 22.04/24.04 exact archive versions only (software closed, offline-tested); other distros manual; never a substitute for boot-driver and mount verification |
 | Guest preparation (NVMe boot drivers) | Implemented / Partial live | Ubuntu 24.04 builtin-driver path applied/rebooted/reassessed; Windows and module-staged Ubuntu variants untested; separate reboot consent |
-| Reboot, reassessment, recovery harness | Implemented / Partial live | Ubuntu preparation and guest rollback reboots, migration deallocate/start, restored snapshot boot and original restart preserved data/health; failed attempts and exact continuation are disclosed |
+| Reboot, reassessment, recovery harness | Implemented / Partial live | Fresh exact Ubuntu 24.04 repeat passed preparation/reboot/reassessment, rollback/reboot, migration deallocate/start, restored snapshot boot and original restart with data/health checks; previous failed repeat remains unexplained because its failed observation was not captured |
 | Placement (availability set, PPG, VMSS) | Blocked by design | Detected and explained |
 | Capacity failure and rollback | Partial | Dynamic SKU/quota readiness; allocation is only known at run time |
 | Application health / workload certification | Blocked by design | Owner-supplied review required |
@@ -46,7 +46,7 @@ Live observations are scoped to the exact disposable profile, never a blanket pr
 | Terraform live no-op reconciliation | Implemented / Partial live | Real normal target plan has zero resource changes; journal completion requires separate final owner acceptance |
 | Evidence freshness | Implemented | Expiry and guest freshness enforced |
 | Optional pinned upstream conversion | Partial | Manual, separately supported; see [nvme-backend.md](nvme-backend.md) |
-| Live acceptance | Partial / repeat failed | First exact profile technically verified; follow-up preparation passed but migration post-health gate failed; Ubuntu22.04 module candidate was builtin and stopped. See acceptance record; no production promotion |
+| Live acceptance | Partial / exact repeat passed | Fresh complete final harness and Terraform no-op passed for exact pinned Ubuntu 24.04 AMD profile. Ubuntu 22.04 module candidate was builtin and stopped. Conditional owner acceptance, other configurations and production support remain unproven; see acceptance record |
 
 Conservative exclusions are intentional. The documented no-temp-disk utility
 boundary and the broader platform NVMe page describe temporary-disk transitions

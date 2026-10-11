@@ -165,8 +165,38 @@ change, registration or quota increase was used to force a successful result.
 The earlier verified lab journal remains `verified`; this failed repeat remains
 `started`. Neither is accepted or reconciled on the owner's behalf.
 
-Remaining work is not cosmetic: diagnose a future failed instance observation
-from the newly retained evidence and complete a fresh full-cycle repeat; select
-a genuinely module-staged supported image through independently verified
-package/kernel configuration before requesting another exact paid scope.
-The Ubuntu release label alone cannot establish driver configuration.
+The diagnostic-only scope below completed a clean fresh run of the corrected
+full harness for this exact pinned Ubuntu 24.04 AMD profile. It does not
+retrospectively explain the previous failed repeat because its failing
+observation was not captured.
+
+## Approved diagnostic repeat (2026-10-11, exact diag-04 scope)
+
+The owner separately approved one Sweden Central repeat in
+`azvm-upgrade-lab-20261011-diag-04`, capped at USD 2 and four hours from
+first create, with an absolute 20:00 UTC deadline and a 45-minute cleanup
+reserve. The exact pinned Ubuntu 24.04 Gen2 image, D2as_v5/SCSI to D2as_v6/
+NVMe, host encryption, private network, no public IP/NAT/Bastion, one
+synthetic data disk and exact-group cleanup were used. No quota changes,
+registrations, substitutions or module-profile tests were made.
+
+| Path | Actual result |
+|---|---|
+| Fresh gates | Sweden regional/DASv5/Dav6 quota 100/0; selected sizes unrestricted; exact Gen2 image Active; host-encryption feature/provider, cost and inherited policy checks passed. Quota is not a capacity guarantee |
+| Disk identity and initialization | Passed. ARM exact attachment and disk ownership, IMDS LUN, Microsoft Azure SCSI udev mapping and captured serial independently identified only the newly created empty disposable LUN0 before initialization |
+| Preparation, reboot, reassessment | Passed. Ubuntu 24.04 NVMe preparation applied; reboot and fresh assessment accepted; data checksum, persistent mount and health sentinel passed |
+| Guest rollback | Passed. Toolkit-owned bounded changes were restored; rollback reboot and fresh boot/data/mount/health evidence passed. This does not prove restoration of arbitrary guest changes |
+| Source Terraform plan | Real normal source plan was no-op before migration |
+| Migration and health diagnostic | D2as_v5/SCSI to D2as_v6/NVMe completed. This repeat's post-start instance view explicitly reported `ProvisioningState/succeeded` and `PowerState/running`; guest NVMe boot, agent, mounts, checksum, application health and approved HTTPS probe passed. The earlier repeat's absent failure snapshot remains unknowable, not retroactively diagnosed |
+| Snapshot restore | Two LRS snapshots and exact copied disks were used sequentially. The original was deallocated while a private host-encrypted D2as_v5/SCSI recovery VM booted; mounted data/checksum and health passed. Recovery resources were removed; original target VM restarted and reverified. This is not application-consistent backup certification or guaranteed future SKU allocation |
+| Final Terraform plan | Real normal target plan after restore had zero changes; no ignore_changes or state manipulation |
+| Cleanup and cost | Exact diag-04 group absent; zero residual resources. Elapsed 1.576 hours, conservative USD 0.25/hour envelope USD 0.394. Delayed subscription month-to-date telemetry moved from USD 1.7112065 to USD 1.8906065 (USD 0.1794 delta); attribution is not isolated, and this is not a final itemized bill or hard-stop meter |
+
+The diagnostic migration journal is `verified`, not owner-accepted or
+`reconciled`. Conditional acceptance still requires different supported
+configurations and owner review. The module-staged Ubuntu path remains blocked:
+the tested Jammy candidate had built-in NVMe drivers, and no pinned,
+publisher-source-qualified modular candidate is known. Windows, other Linux
+builds, complex storage, Trusted Launch conversion, Gen1/architecture
+conversion and application certification remain unproven or separate
+workflows. No production promotion is implied.
