@@ -80,6 +80,21 @@ credential files into this repository; repository `.azure/deployment-plan.md`
 is separate from the external CLI configuration directory. Every toolkit
 cloud command is explicitly subscription-scoped.
 
+For this project's local test session, the intended CLI directory is
+`projects\.azure`, not `projects\personal\az-vm-upgrade\.azure` and not the
+home-directory default. Set the projects-root path explicitly in every new
+process before checking the approved subscription:
+
+```powershell
+$ProjectsRoot = (Resolve-Path '..\..').Path # From this repository's local checkout
+$env:AZURE_CONFIG_DIR = Join-Path $ProjectsRoot '.azure'
+az account show --subscription '<approved-subscription-id>'
+```
+
+An authentication error from a different config directory does not establish
+that the intended session is signed out. Verify the path first; do not copy
+credentials or initiate a new login to compensate for a wrong path.
+
 ```powershell
 terraform -chdir=infra\test-vm init
 terraform -chdir=infra\test-vm plan -var-file='<approved-ignored-tfvars>' -out='<ignored-plan>'
