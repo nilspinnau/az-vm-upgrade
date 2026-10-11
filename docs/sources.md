@@ -97,8 +97,10 @@ must still be reviewed for any future third-party additions and customer data.
 
 ## Live integration fixes and identity authority (2026-10-11)
 
-- https://learn.microsoft.com/en-us/azure/virtual-machines/linux/add-disk
-  maps ARM/IMDS LUN to SCSI HCTL and Azure stable symlinks. Guest SCSI
+- https://learn.microsoft.com/en-us/azure/virtual-machines/linux/azure-to-guest-disk-mapping
+  documents correlating the VM's ARM data-disk LUN with guest SCSI HCTL.
+  https://learn.microsoft.com/en-us/azure/virtual-machines/linux/azure-virtual-machine-utilities
+  documents Microsoft-provided stable symlinks. Guest SCSI
   NAA serial is not ARM managed-disk `uniqueId`. The lab initializer uses
   exact IMDS disk ID/unique LUN, Microsoft-provided Azure udev properties,
   HCTL and the captured serial; no size/order inference or cloud-init formatting.
@@ -118,6 +120,36 @@ must still be reviewed for any future third-party additions and customer data.
   and a one-way re-enablement restriction. This toolkit only adds an optional
   assessment advisory and never enables/disables Trusted Launch. Azure Migrate
   importing Gen2 servers is a different workflow from this existing-Azure-VM lab.
+
+### IMDS request and initialization policy review (2026-10-11)
+
+The initializer requests
+`http://169.254.169.254/metadata/instance/compute/storageProfile?api-version=2021-02-01`
+with `Metadata:true` and proxy bypass. Microsoft's
+[IMDS reference](https://learn.microsoft.com/en-us/azure/virtual-machines/instance-metadata-service)
+lists that API version and documents nested-property filtering with JSON as
+the default for objects. Data-disk `lun` and `managedDisk` are documented
+since `2019-06-01`; the sample contains `managedDisk.id`. This is not an
+unsupported API-version or leaf-format request.
+
+The reference describes attached data disks but gives no data-disk update
+latency guarantee. Its FAQ discusses metadata refresh for older VM creation
+dates and disk changes; it does not establish that this lab's empty array
+is a known hot-attachment limitation or propagation bug. Terraform attaches
+the test disk through a separate attachment resource after VM creation;
+that ordering is established, but its relationship to the empty response
+is not. Updating the API version or adding retries is not a proven remedy.
+
+Requiring exact independent IMDS ID/LUN proof is an additional toolkit
+initialization policy, not a prerequisite in Microsoft's ARM-to-guest LUN
+mapping procedure. The current guard remains unchanged and fail-closed.
+Using fresh exact ARM attachment/ownership/provenance plus Microsoft Azure
+udev data-disk/LUN mapping and SCSI HCTL is a documented alternative mapping
+basis, but changing the approved identity policy requires explicit approval
+before implementation or live formatting. All serial continuity, unique
+LUN, OS-ancestry, empty-signature and unmounted-disk guards must remain;
+size/order inference is not an alternative. Contradictory identity evidence
+must not be ignored. No new live test is justified merely by this review.
 ## Live device-mapping correction
 
 The probe consumes azure-vm-utils' `data/by-lun` links and Azure disk/LUN

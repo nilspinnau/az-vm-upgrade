@@ -145,6 +145,16 @@ IMDS identities still stop before formatting. Do not substitute size/order
 inference, retry formatting or declare metadata propagation as the cause
 without actual response evidence.
 
+The IMDS prerequisite is an additional toolkit safety policy, not a
+Microsoft-required step in ARM-to-guest LUN mapping. The request uses a
+documented API version and object endpoint. Resize-07 returned an empty
+data-disk array despite confirmed ARM/guest attachment; no documented
+freshness guarantee or underlying cause was established. See the
+[public-source review](sources.md#imds-request-and-initialization-policy-review-2026-10-11).
+The guard is unchanged. Any switch to Microsoft's ARM-plus-udev/HCTL
+mapping basis needs explicit identity-method approval before implementation
+or live formatting; it is not authorized by earlier lab approvals.
+
 Record the managed-data checksum, application health and accepted backup or
 documented recovery method before any upgrade. Resolve driver/boot/mount
 readiness and reboot under explicit approval before planning.
