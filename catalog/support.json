@@ -1,10 +1,14 @@
 {
   "schemaVersion": "support/1.0",
-  "reviewedAt": "2026-10-11T00:00:00Z",
+  "reviewedAt": "2026-10-11T20:55:00Z",
   "executionBoundary": "disposable-lab-only",
   "liveValidatedPaths": [
     {
-      "status": "single-disposable-lab-observation",
+      "status": "exact-profile-live-observed; conditional-owner-acceptance",
+      "successfulMigrationRuns": 2,
+      "successfulCompleteHarnessRuns": 1,
+      "failedMigrationAttempts": 1,
+      "failedAttemptEvidence": "One earlier repeat failed post-start health validation; the failed observation was not retained and cannot be diagnosed retrospectively.",
       "image": "Canonical:ubuntu-24_04-lts:server:24.04.202609040",
       "kernel": "6.17.0-1022-azure",
       "sourceSize": "Standard_D2as_v5",
@@ -19,14 +23,16 @@
       "network": "private NIC; measured VF traffic; MANA traffic not proved",
       "terraformProvider": "azurerm/4.48.0",
       "terraformPlan": "normal target plan has zero changes",
-      "restoration": "copied snapshots booted on a sequential private SCSI VM; UUID, checksum, health and host encryption proved; initial failed attempts retained",
+      "restoration": "The later fresh complete harness booted copied snapshots on a sequential private SCSI VM; UUID, checksum, health and host encryption passed. This is not application-consistent backup certification.",
+      "latestHarness": "preparation/reboot/reassessment/rollback/reboot/migration/verification/sequential-restore/original-restart/Terraform-no-op passed in the exact approved disposable lab",
       "ownerAcceptance": "pending conditional multi-configuration verification",
       "productionSupport": false,
       "record": "docs/acceptance.md"
     }
   ],
   "labProfiles": [
-    {"pattern": "^ubuntu:(22\\.04|24\\.04):x86_64$", "paths": ["same-interface", "gen2-scsi-nvme"], "status": "offline-tested-only"},
+    {"pattern": "^ubuntu:24\\.04:x86_64$", "paths": ["same-interface", "gen2-scsi-nvme"], "status": "exact-profile-live-observed; full-harness-pass; disposable-lab-only"},
+    {"pattern": "^ubuntu:22\\.04:x86_64$", "paths": ["same-interface", "gen2-scsi-nvme"], "status": "offline-tested-only; tested-candidate-kernel-had-builtin-nvme; no-module-profile-established"},
     {"pattern": "^windows:20348:AMD64$", "paths": ["same-interface", "gen2-scsi-nvme"], "status": "offline-tested-only"}
   ],
   "assessmentOnly": ["SUSE/SLES/SAP", "RHEL", "other Windows builds", "Gen1 conversion", "temporary disks", "special placement", "ADE/CMK/confidential configurations", "clustered/certified appliances", "third-party boot/storage filters"],

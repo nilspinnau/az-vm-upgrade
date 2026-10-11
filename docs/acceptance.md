@@ -10,7 +10,7 @@ AzureRM is pinned to 4.48.0; the provider lock file is committed.
 |---|---|
 | PowerShell parsing | All module, customer, guest, fixture and integration scripts passed |
 | Configured static analysis | Module, customer, guest and integration scripts passed |
-| Decision/orchestration tests | 142 Pester tests passed; no failures, skips or unrun tests. Includes encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates and rejected-validation evidence persistence. Upstream catalog hashes verified against locally fetched copies |
+| Decision/orchestration tests | 143 Pester tests passed; no failures, skips or unrun tests. Includes encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
 | Guest script syntax | Bash syntax and embedded Python AST parsing passed; no guest script executed |
 | Terraform format/validate | Passed |
 | Installed provider schema | Linux/Windows size/controller/host-encryption and NIC acceleration attributes verified |
@@ -100,7 +100,10 @@ originals and verifies timeout/readiness after reboot. The snapshot restore
 exercise is separate from guest rollback and must not be inferred from backup
 creation.
 
-### Restoration failures and evidence boundaries
+### Historical restoration failures and evidence boundaries
+
+The initial failures below describe the first recovery-harness attempts; the
+corrected complete harness subsequently passed in the approved diag-04 run.
 
 The initial CLI-generated recovery deployment failed because its older Compute
 API required `UseStandardSecurityType` for explicit Standard security. No
@@ -115,24 +118,24 @@ the correct bounded checks: SCSI boot, agent, unchanged mounts/UUID/checksum,
 health and HTTPS. Failed outputs remain retained alongside the evidence review,
 not overwritten or relabeled successful runs. Recovery deletion also exposed
 an eventually consistent resource listing; the harness now uses typed deletes
-and bounded absence polling. The revised complete harness has **not** been
-rerun from scratch; actual restoration proof was established through the
-documented exact-scope continuation.
+and bounded absence polling. At that time the revised complete harness had
+not been rerun; its fresh end-to-end result is recorded in the diag-04 section.
 
-### Additional evidence required before final owner acceptance
+### Evidence still required before final owner acceptance
 
-One configuration does not prove a generally reliable migration service.
-The smallest next scope is sequential disposable testing, separately approved
-and priced: first repeat this exact profile from scratch with the final
-preparation/migration/restoration harnesses, then exercise a verified
-module-staged Ubuntu profile and same-interface resize, including reboot,
-deallocate/start, data/network/health checks, restore and Terraform no-op.
-Select the exact image/kernel/SKUs through fresh discovery before approval;
-do not assume another Ubuntu release exercises a modular NVMe driver.
+The exact Ubuntu 24.04 AMD profile has now passed a fresh complete corrected
+harness run. Together with the earlier verified migration, this is repeat
+evidence for one profile, not broad configuration coverage; it also does not
+make the historical repeat's missing failure observation diagnosable. Any
+additional paid test requires a separate exact scope and user approval. A
+module-staged Ubuntu image still needs exact publisher/package/kernel source
+evidence before it is a viable candidate; do not assume another release
+exercises a modular NVMe driver. Windows and other configurations likewise
+need separately scoped evidence before support claims expand.
 
 | Configuration / gap | Classification |
 |---|---|
-| Exact Ubuntu 24.04 AMD builtin-driver path | Live observed; repeatability and final full-harness run still needed for conditional owner acceptance |
+| Exact Ubuntu 24.04 AMD builtin-driver path | Two successful live migrations observed; one fresh corrected full-cycle preparation/migration/restore run passed. One intervening repeat failed health validation without retaining the failed observation. Owner acceptance remains conditional |
 | Ubuntu 22.04 / module-staged drivers / same-interface resize | Offline implementation only; additional live evidence required |
 | Windows Server 2022, signed MANA installation | Offline candidate lab path; operator-supplied artifact and separate Windows live scope required; not a proven supported migration |
 | Other Linux distributions / other Windows builds | Assessment-only, outside declared automated support |
@@ -158,12 +161,13 @@ approval constitutes final workload-owner acceptance.
 | Repeat cleanup | Failure finalizer removed the exact repeat group and verified absence before the next deployment |
 | Ubuntu 22.04 candidate | Exact pinned image `Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:22.04.202608060` booted kernel `6.8.0-1064-azure`; both NVMe drivers reported `(builtin)`. The mandatory module-staged gate failed; no initialization, preparation or resize was attempted |
 | Follow-up cleanup/cost | Both exact groups absent with zero retained resources, verified at 15:11:26 UTC. Elapsed 1.264 hours; conservative USD 0.32 envelope estimate below the USD 3 cap. Final itemized bill unknown; delayed telemetry is not a real-time total |
-| Final corrected restore harness repeat | Not reached after the repeat's health gate failed; still unproven from a complete fresh run |
+| Final corrected restore harness repeat | Passed in the later approved diag-04 fresh run; the earlier failed repeat still has no recoverable failure snapshot |
 
 No kernel upgrade, image substitution, hidden retry of mutation, security
 change, registration or quota increase was used to force a successful result.
-The earlier verified lab journal remains `verified`; this failed repeat remains
-`started`. Neither is accepted or reconciled on the owner's behalf.
+The earlier verified lab journal remains `verified`; the failed repeat remains
+`started`. The later diag-04 journal is also `verified`. None is accepted or
+reconciled on the owner's behalf.
 
 The diagnostic-only scope below completed a clean fresh run of the corrected
 full harness for this exact pinned Ubuntu 24.04 AMD profile. It does not

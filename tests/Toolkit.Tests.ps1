@@ -57,6 +57,19 @@ InModuleScope AzVmUpgrade {
             $catalog = @{ reviewedAt = '2000-01-01T00:00:00Z'; entries = @(@{ pattern = '^Standard_D2s_v3$'; series = 'test' }) }
             (Get-LifecycleFinding 'Standard_D2s_v3' $catalog).catalogStale | Should -BeTrue
         }
+        It 'keeps the support catalog scoped to the exact repeated Ubuntu live profile' {
+            $catalog = Read-UpgradeJson (Join-Path $script:RepositoryRoot 'catalog\support.json')
+            $profile = @($catalog.liveValidatedPaths | Where-Object image -CEQ 'Canonical:ubuntu-24_04-lts:server:24.04.202609040')
+            $profile.Count | Should -Be 1
+            $profile[0].successfulMigrationRuns | Should -Be 2
+            $profile[0].successfulCompleteHarnessRuns | Should -Be 1
+            $profile[0].failedMigrationAttempts | Should -Be 1
+            $profile[0].productionSupport | Should -BeFalse
+            $profile[0].ownerAcceptance | Should -Match 'pending'
+            $jammy = @($catalog.labProfiles | Where-Object pattern -CEQ '^ubuntu:22\.04:x86_64$')
+            $jammy.Count | Should -Be 1
+            $jammy[0].status | Should -Match 'no-module-profile-established'
+        }
         It 'rejects stale and future timestamps' {
             { Assert-FreshEvidence '2000-01-01T00:00:00Z' } | Should -Throw
             { Assert-FreshEvidence ([DateTimeOffset]::UtcNow.AddDays(1).ToString('o')) } | Should -Throw
