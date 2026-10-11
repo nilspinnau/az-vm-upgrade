@@ -40,6 +40,8 @@ Encryption-at-host and SKU capability additions reviewed 2026-10-11:
 |---|---|
 | Resize | https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/resize-vm |
 | Platform NVMe prerequisites / minimal controller capability sequence | https://learn.microsoft.com/en-us/azure/virtual-machines/nvme-linux |
+| Linux distributions endorsed on Azure (Ubuntu LTS platform-image families; does not certify a specific kernel config) | https://learn.microsoft.com/en-us/azure/virtual-machines/linux/endorsed-distros |
+| Azure VM utilities pinned README (`azure-nvme-id`, udev links, image test harness requiring SSH and default 50 reboots) | https://github.com/Azure/azure-vm-utils/blob/7989a36fcf233e4c4bd5fbc20964f3f038b08060/README.md |
 | Community utility support / no-temp-disk / ADE / Gen1 exclusions | https://learn.microsoft.com/en-us/azure/virtual-machines/migration/scsi-to-nvme-migration |
 | MANA architecture and Mellanox coexistence | https://learn.microsoft.com/en-us/azure/virtual-network/accelerated-networking-mana-overview |
 | Actual Linux VF/MANA use | https://learn.microsoft.com/en-us/azure/virtual-network/accelerated-networking-mana-linux |
@@ -124,3 +126,30 @@ not necessarily provide `ID_BUS`; the resolved block device's kernel sysfs
 subsystem establishes the controller independently. SCSI additionally requires
 its udev bus property. The lab observed this difference with unchanged LUN,
 filesystem UUID, mount and checksum after conversion.
+
+## NVMe boot-driver configuration evidence boundary (2026-10-11)
+
+Microsoft's [Linux/Windows NVMe migration guidance](https://learn.microsoft.com/en-us/azure/virtual-machines/nvme-linux)
+requires OS readiness, initramfs/boot-driver checks and post-conversion guest
+verification, but does not name an Ubuntu image/kernel with
+`CONFIG_BLK_DEV_NVME=m` and `CONFIG_NVME_CORE=m`. The Ubuntu endorsed-distros
+page documents distribution/image families, not a particular Marketplace
+image's kernel configuration. The pinned `azure-vm-utils` project supplies
+NVMe identity/udev utilities, not an alternative kernel driver or proof that a
+driver is modular.
+
+Accordingly, no supported pinned module-staged image is currently
+source-qualified. This is a hard block for claiming or planning a
+module-staged Ubuntu test; it is not a blocker for the exact tested
+Ubuntu 24.04 builtin-driver profile. The approved Ubuntu 22.04 candidate's
+running guest reported both `nvme` and `nvme_core` as `(builtin)`. The
+Ubuntu 24.04 diag-04 guest did likewise. These are exact runtime observations,
+not source proof for every image of either release. Qualifying a future module
+profile requires a publisher-controlled source/package/config tied to the
+exact immutable Marketplace image and boot-kernel package, demonstrating both
+NVMe options as modules; deterministic offline tests must then prove initramfs
+contains both matching modules and the preparation/rollback logic handles that
+package/kernel. A separately approved live boot is needed to verify the
+actually installed package, running kernel, module paths and initramfs on that
+exact image. Until then do not substitute an image/kernel or add another
+distro by inference.

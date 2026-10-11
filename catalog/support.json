@@ -11,6 +11,7 @@
       "failedAttemptEvidence": "One earlier repeat failed post-start health validation; the failed observation was not retained and cannot be diagnosed retrospectively.",
       "image": "Canonical:ubuntu-24_04-lts:server:24.04.202609040",
       "kernel": "6.17.0-1022-azure",
+      "nvmeDriverMode": "builtin; confirmed by modinfo filename=(builtin) for nvme and nvme_core on the running guest",
       "sourceSize": "Standard_D2as_v5",
       "targetSize": "Standard_D2as_v6",
       "sourceController": "SCSI",
@@ -32,7 +33,7 @@
   ],
   "labProfiles": [
     {"pattern": "^ubuntu:24\\.04:x86_64$", "paths": ["same-interface", "gen2-scsi-nvme"], "status": "exact-profile-live-observed; full-harness-pass; disposable-lab-only"},
-    {"pattern": "^ubuntu:22\\.04:x86_64$", "paths": ["same-interface", "gen2-scsi-nvme"], "status": "offline-tested-only; tested-candidate-kernel-had-builtin-nvme; no-module-profile-established"},
+    {"pattern": "^ubuntu:22\\.04:x86_64$", "paths": ["same-interface", "gen2-scsi-nvme"], "status": "offline-tested-only; one tested image/kernel had builtin nvme and nvme_core; no module-staged image is source-qualified"},
     {"pattern": "^windows:20348:AMD64$", "paths": ["same-interface", "gen2-scsi-nvme"], "status": "offline-tested-only"}
   ],
   "assessmentOnly": ["SUSE/SLES/SAP", "RHEL", "other Windows builds", "Gen1 conversion", "temporary disks", "special placement", "ADE/CMK/confidential configurations", "clustered/certified appliances", "third-party boot/storage filters"],

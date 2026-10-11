@@ -1,11 +1,13 @@
 {
   "schemaVersion": "preparation-catalog/1.0",
-  "verifiedOn": "2026-10-09",
+  "verifiedOn": "2026-10-11",
+  "liveEvidenceBoundary": "Ubuntu 24.04 x86_64 exact pinned image/kernel and AMD SCSI-to-NVMe disposable profile passed preparation, reboot, reassessment and bounded rollback/reboot once; Windows and Ubuntu 22.04 preparation were not live-tested.",
   "profiles": {
     "ubuntu": {
       "osProfiles": ["ubuntu:22.04:x86_64", "ubuntu:24.04:x86_64"],
       "script": "guest/prepare-ubuntu-nvme.sh",
-      "components": ["nvme-boot", "azure-vm-utils", "mana-linux-check"]
+      "components": ["nvme-boot", "azure-vm-utils", "mana-linux-check"],
+      "driverMode": "runtime-detected: supports built-in drivers or loadable modules; no particular Ubuntu release/image is assumed to be modular"
     },
     "windows": {
       "osProfiles": ["windows:20348:AMD64"],

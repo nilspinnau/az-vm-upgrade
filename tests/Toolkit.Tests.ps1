@@ -68,7 +68,11 @@ InModuleScope AzVmUpgrade {
             $profile[0].ownerAcceptance | Should -Match 'pending'
             $jammy = @($catalog.labProfiles | Where-Object pattern -CEQ '^ubuntu:22\.04:x86_64$')
             $jammy.Count | Should -Be 1
-            $jammy[0].status | Should -Match 'no-module-profile-established'
+            $jammy[0].status | Should -Match 'no module-staged image is source-qualified'
+            $profile[0].nvmeDriverMode | Should -Match '^builtin;'
+            $preparation = Read-UpgradeJson (Join-Path $script:RepositoryRoot 'catalog\preparation.json')
+            $preparation.profiles.ubuntu.driverMode | Should -Match 'runtime-detected'
+            $preparation.liveEvidenceBoundary | Should -Match 'Windows and Ubuntu 22\.04 preparation were not live-tested'
         }
         It 'rejects stale and future timestamps' {
             { Assert-FreshEvidence '2000-01-01T00:00:00Z' } | Should -Throw

@@ -106,8 +106,10 @@ successful restore, and no original-SKU allocation is promised.
 Preparation has its own journal (`out\journals\prep-*.journal.json`) written
 before each guest call. An `in-progress` journal means the outcome is unknown:
 run `Invoke-VmPreparation.ps1 -Mode Status` and review; apply/rollback are
-refused until then. Guest rollback restores recorded values only, is not a VM
-restore, and has not been proven live. See [guest-preparation.md](guest-preparation.md).
+refused until then. Guest rollback restores recorded values only and is not a
+VM restore. Its bounded Ubuntu 24.04 AMD disposable-lab path passed once;
+other guest configurations remain unproven. See
+[guest-preparation.md](guest-preparation.md).
 ## Rejected validation evidence
 
 The executor stores `validationEvidence` in the ignored VM journal before

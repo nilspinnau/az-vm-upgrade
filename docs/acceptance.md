@@ -40,9 +40,9 @@ Provider schema does not establish replacement behavior; the pinned provider
 source and exact resource plans must also be reviewed as explained in
 [Terraform guidance](terraform.md).
 
-## Live observations (2026-10-11, lab removed)
+## Earlier live observations (2026-10-11, original lab removed)
 
-One explicitly approved Sweden Central disposable lab was deployed using
+The first explicitly approved Sweden Central disposable lab was deployed using
 Ubuntu 24.04 Gen2 x64, `Standard_D2as_v5` with encryption at host, one ordinary
 Standard SSD OS disk and one 8-GiB data disk. No VM public IP, NAT or Bastion:
 Run Command uses explicitly enabled lab-only subnet default outbound access.
@@ -85,9 +85,9 @@ This is not permission for customer operations, arbitrary regions, quota
 increases or security conversion. New customer/live scopes still require
 their own approval. Follow [test guidance](testing.md).
 
-The existing public repository is the approved publication destination.
-Commit/push require privacy and provenance checks; raw lab evidence never
-belongs in the public repository.
+The repository is public; privacy and provenance checks apply to every
+publication. Raw lab evidence never belongs in the public repository. Later
+approved runs and their separate evidence are recorded below.
 
 ## Preparation limits
 
