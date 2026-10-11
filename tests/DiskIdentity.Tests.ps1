@@ -2,12 +2,12 @@ Describe 'Linux sentinel authoritative SCSI identity mapping' {
     It 'checks controller and LUN identity independently of the ARM uniqueId scheme' {
         $scriptPath = Join-Path $PSScriptRoot '..\guest\lab-sentinel-linux.sh'
         $python = @'
-import ast, pathlib, sys
+import ast, contextlib, io, json, pathlib, sys
 source = pathlib.Path(sys.argv[1]).read_text()
 body = source.split("python3 - <<'PY'\n", 1)[1].split("\nPY", 1)[0]
 tree = ast.parse(body)
 function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "verify_scsi_identity")
-scope = {}
+scope = {"json": json}
 exec(compile(ast.Module(body=[function], type_ignores=[]), "<identity-check>", "exec"), scope)
 verify = scope["verify_scsi_identity"]
 disk_id = "/subscriptions/synthetic/resourceGroups/lab/providers/Microsoft.Compute/disks/sentinel"
@@ -23,18 +23,35 @@ cases = [
     (metadata, props, "1:0:0:0", disk_id, "unrelated-arm-unique-id"),
     ({"dataDisks": metadata["dataDisks"] * 2}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
     (metadata, props, "1:0:0:0", disk_id, ""),
+    ({}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
+    ({"dataDisks": []}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
+    ({"dataDisks": [{"lun": "0", "managedDisk": {}}]}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
+    ({"dataDisks": [{"lun": "0", "managedDisk": {"id": ""}}]}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
+    ({"dataDisks": {}}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
+    ({"dataDisks": [None]}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
+    ({"dataDisks": [{"lun": 0, "managedDisk": {"id": 123}}]}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
+    ([], props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
 ]
 for args in cases:
+    output = io.StringIO()
     try:
-        verify(*args)
+        with contextlib.redirect_stdout(output):
+            verify(*args)
     except RuntimeError:
+        observed = json.loads(output.getvalue().split("AZVM_DISK_IDENTITY_OBSERVATION=", 1)[1])
+        assert observed["storageProfile"] == args[0]
+        assert observed["expectedManagedDiskId"] == args[3]
+        assert observed["udev"] == args[1]
+        assert observed["hctl"] == args[2]
         continue
     raise AssertionError("Ambiguous or wrong identity accepted")
-print("1 positive and 8 refusal identity fixtures passed")
+verify({"dataDisks": [{"lun": "0", "managedDisk": {"id": disk_id}}]}, props,
+       "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"])
+print("2 positive and 16 refusal identity fixtures passed; failure observations preserved")
 '@
         $result = $python | python - $scriptPath
         $LASTEXITCODE | Should -Be 0
-        $result | Should -Match '8 refusal'
+        ($result -join "`n") | Should -Match '16 refusal'
     }
     It 'uses the kernel bus when NVMe udev ID_BUS and lsblk TRAN are absent' {
         $scriptPath = Join-Path $PSScriptRoot '..\guest\linux-probe.sh'

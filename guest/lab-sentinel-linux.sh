@@ -19,10 +19,23 @@ hctl="$(lsblk -dn -o HCTL "$device" | tr -d '[:space:]')"
 METADATA="$metadata" UDEV_PROPERTIES="$properties" HCTL="$hctl" python3 - <<'PY'
 import json, os
 def verify_scsi_identity(metadata, properties, hctl, expected_id, expected_serial):
-    disks = metadata.get("dataDisks", [])
+    print("AZVM_DISK_IDENTITY_OBSERVATION=" + json.dumps({
+        "schemaVersion": "lab-disk-identity/1.0",
+        "expectedManagedDiskId": expected_id,
+        "expectedScsiSerial": expected_serial,
+        "storageProfile": metadata,
+        "udev": properties,
+        "hctl": hctl,
+    }), flush=True)
+    if not isinstance(metadata, dict) or not isinstance(metadata.get("dataDisks"), list):
+        raise RuntimeError("IMDS storageProfile/dataDisks response shape is missing or invalid; see retained identity observation")
+    disks = metadata["dataDisks"]
+    if any(not isinstance(d, dict) or not isinstance(d.get("managedDisk"), dict)
+           or not isinstance(d["managedDisk"].get("id"), str) for d in disks):
+        raise RuntimeError("IMDS managed disk identity is missing or invalid; see retained identity observation")
     at_lun = [d for d in disks if str(d.get("lun")) == "0"]
     if len(at_lun) != 1 or at_lun[0].get("managedDisk", {}).get("id", "").lower() != expected_id.lower():
-        raise RuntimeError("Exact managed disk identity and unique LUN not confirmed by IMDS")
+        raise RuntimeError("Exact managed disk identity and unique LUN not confirmed by IMDS; see retained identity observation")
     if properties.get("ID_BUS") != "scsi" or properties.get("AZURE_DISK_TYPE") != "data" or properties.get("AZURE_DISK_LUN") != "0":
         raise RuntimeError("Azure udev mapping does not prove a managed SCSI data disk at LUN 0")
     if len(hctl.split(":")) != 4 or hctl.split(":")[-1] != "0":

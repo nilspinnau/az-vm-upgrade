@@ -54,6 +54,12 @@ was deleted and absence verified. The atomic publication correction is
 offline-tested, not a successful same-interface migration; catalog scope is
 unchanged.
 
+Resize-06 likewise stopped before formatting when IMDS exact-disk/LUN
+identity was not confirmed. ARM/udev checks passed but the actual IMDS
+response was not retained, so no cause or same-interface success is inferred.
+The initializer now retains structured identity diagnostics and still
+refuses missing/ambiguous metadata. Both failed groups were removed.
+
 Conservative exclusions are intentional. The documented no-temp-disk utility
 boundary and the broader platform NVMe page describe temporary-disk transitions
 differently; this toolkit does not silently pick a permissive interpretation

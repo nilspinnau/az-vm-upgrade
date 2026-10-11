@@ -278,3 +278,67 @@ No owner-accepted production path exists. The already observed exact Ubuntu
 live-observed migration boundary. Same-interface, Windows, module-staged
 drivers and other distributions are not promoted; no modular image is
 publisher-source-qualified.
+
+## Approved resize-06 attempt (2026-10-11 UTC)
+
+The owner approved a new exact same-interface scope with the same pinned
+Ubuntu image, Sweden Central/no zone, D2as_v5/SCSI to D4as_v5/SCSI,
+Standard security/host encryption, 64-GiB OS and one 8-GiB LUN0 disk,
+private topology and bounded sequential recovery. USD 2/four hours and
+exact cleanup were approved; the user monthly ceiling was **USD 500**,
+not the subscription's separate budget.
+
+Fresh preflight, quota/image/features/permissions, unchanged inherited
+policy review, prices and a new isolated nine-create plan passed using
+published atomic-write fix `49d2225`. Deployment passed at 22:12:11Z.
+Read-only ARM attachment proved the exact owned data disk at unique LUN0;
+udev independently reported SCSI/data/LUN0 and its captured serial. The
+actual kernel again reported `6.17.0-1022-azure` with built-in NVMe drivers.
+
+Initialization stopped **before formatting** with:
+`RuntimeError: Exact managed disk identity and unique LUN not confirmed by IMDS`.
+The raw Run Command response retained the traceback; successful ARM Run
+Command provisioning was not treated as guest success. No preparation,
+rollback, resize, snapshots or recovery was attempted. There was no atomic
+publication error. Exact cleanup passed, followed by independent
+`group exists=false` and zero residual resources.
+
+Window: 22:09:04Z to 22:17:12Z, **0.135500 hours**, within the approval.
+Conservatively rounding the actual source/two-disk sequence to one billed
+hour gives the same USD 0.123993 component estimate plus USD 0.50
+network/metering reserve = **USD 0.623993**, not a bill. The refreshed full
+approved sequence model was USD 1.811439. Retained delayed month-to-date
+ActualCost was USD 2.01741901191173 before and after; attribution and final
+invoice remain unknown. USD 500 minus reported cost minus USD 25 reserve
+left USD 472.982581 illustrative headroom, not spending authorization.
+
+### Identity diagnosis and diagnostic correction
+
+The generated expected disk ID exactly matched Terraform output and the
+ARM-attached managed disk; generated serial exactly matched captured udev.
+The generated initializer otherwise matched the previously successful
+resize-05 script. Case-insensitive ARM-ID matching and both integer/string
+LUN0 are already supported; no input/normalization defect was established.
+
+**The actual IMDS response from this failure was not retained.** The old
+initializer captured it only in a transient shell variable and raised a
+generic assertion. Empty/missing metadata, wrong shape, duplicate LUN or an
+ID mismatch cannot now be distinguished; eventual consistency or Azure
+response changes are hypotheses, not diagnosed causes. Existing ARM and
+udev evidence is not a substitute for that missing independent IMDS proof.
+Original run evidence and generated inputs remain private and unchanged.
+
+The initializer now emits the actual IMDS storage profile and exact
+expected/mapped inputs as structured diagnostic JSON before assertions,
+and rejects malformed metadata with explicit errors. Positive fixtures
+cover integer/string LUN and ID case; sixteen refusal fixtures cover wrong
+controller/type/LUN/serial/ID, duplicate/missing/null/malformed metadata and
+identity. Every failure fixture verifies its actual observation survives.
+No ownership, OS-ancestry, empty-signature or formatting guard was relaxed;
+no automatic guest replay was added.
+
+This closes the diagnostic-loss defect, not the unexplained live identity
+failure. A future separately approved run can now distinguish actual IMDS
+shape/identity failures before formatting; it must still stop and clean up
+when exact identity is missing. Same-interface full-cycle success and
+owner-accepted production readiness remain unproven.

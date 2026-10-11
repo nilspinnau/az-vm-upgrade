@@ -134,6 +134,17 @@ UUID and checksum; never assume the SCSI/NVMe serial schemes are interchangeable
 Windows identity mapping remains unverified/manual; do not use ARM uniqueId as
 a Windows serial or infer disk identity from number/size/model.
 
+The initializer emits `AZVM_DISK_IDENTITY_OBSERVATION=` JSON before its
+identity assertion, containing the exact IMDS storage profile, expected ARM
+disk ID, mapped udev properties/serial and HCTL. Retain the raw Run Command
+response even when the guest fails; ARM `ProvisioningState/succeeded` only
+means Run Command completed, not that formatting or validation succeeded.
+The observation can contain private resource identities and belongs only in
+protected, ignored evidence. Missing, malformed, duplicate or mismatched
+IMDS identities still stop before formatting. Do not substitute size/order
+inference, retry formatting or declare metadata propagation as the cause
+without actual response evidence.
+
 Record the managed-data checksum, application health and accepted backup or
 documented recovery method before any upgrade. Resolve driver/boot/mount
 readiness and reboot under explicit approval before planning.
