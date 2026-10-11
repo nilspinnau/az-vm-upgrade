@@ -13,9 +13,27 @@ InModuleScope AzVmUpgrade {
             $script:wrapperOutput = [regex]::Match($script:wrapperText, "(?m)^\`$out=\(Resolve-Path ([^)]+)\)\.Path").Groups[1].Value
             if (-not $script:wrapperSub -or -not $script:wrapperGroup -or -not $script:wrapperOutput) { throw 'Unsupported wrapper scope declaration' }
             $script:oldConfig = $env:AZURE_CONFIG_DIR
+            $initSource = Get-Content (Join-Path $script:RepositoryRoot 'tests\integration\Invoke-LabDiskInitialization.ps1') -Raw
+            $initBody = $initSource.Substring($initSource.IndexOf('    param($VmId,'))
+            $initBody = $initBody.Substring(0, $initBody.LastIndexOf('} $VmId $DiskId'))
+            $script:initBody = [scriptblock]::Create($initBody)
+            function Invoke-OfflineLabInitialization {
+                param($VmId,$DiskId,$TestResourceGroup,$ExpiresAt,$OutputPath,$IdentityMode,
+                    [switch]$LiveTestConsent,[switch]$ArmUdevIdentityConsent,[switch]$ExclusiveWindowConsent)
+                & $script:initBody $VmId $DiskId $TestResourceGroup $ExpiresAt $OutputPath $IdentityMode $LiveTestConsent.IsPresent $ArmUdevIdentityConsent.IsPresent $ExclusiveWindowConsent.IsPresent
+            }
+            $pattern = '(?s)& \(Get-Module AzVmUpgrade\) \{\s*param\(\$vmId,\$diskId,\$out,\$sub\).*?\} \$vmId \$o\.data_disk_id\.value \$out \$sub'
+            if ([regex]::Matches($script:wrapperText, $pattern).Count -ne 1) { throw 'Unsupported initialization block; do not infer replacement scope' }
+            $replacement = @'
+$result.identityMode='arm-azure-udev'
+    Write-UpgradeJson $result "$out\resize-cycle.json"
+    Invoke-OfflineLabInitialization -VmId $vmId -DiskId $o.data_disk_id.value -TestResourceGroup $rg -ExpiresAt $reserve -IdentityMode arm-azure-udev -LiveTestConsent -ArmUdevIdentityConsent -ExclusiveWindowConsent -OutputPath "$out\resize-initialization-journal.json"
+'@
+            $script:armWrapper = [scriptblock]::Create([regex]::Replace($script:wrapperText, $pattern, [Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement }))
         }
         BeforeEach {
             $script:identityRefused = $false
+            $script:useArmMode = $false
             $script:exists = $false
             $script:deleted = $false
             $script:guestCalls = 0
@@ -85,14 +103,14 @@ Write-UpgradeJson @{status='restoration-verified';synthetic=$true} $OutputPath
             Mock Invoke-ArmRead {
                 param($Id)
                 if ($Id -eq $script:vm) {
-                    return @{location='swedencentral';tags=@{'az-vm-upgrade-disposable'='true'};properties=@{
+                    return @{id=$script:vm;location='swedencentral';tags=@{'az-vm-upgrade-disposable'='true'};properties=@{
                         securityProfile=@{encryptionAtHost=$true};storageProfile=@{diskControllerType='SCSI'
                         osDisk=@{managedDisk=@{id=$script:os}}
                         dataDisks=@(@{lun=0;managedDisk=@{id=$script:disk}})}}}
                 }
                 if ($Id -eq $script:disk) {
-                    return @{managedBy=$script:vm;tags=@{'az-vm-upgrade-disposable'='true'}
-                        properties=@{diskSizeGB=8;creationData=@{createOption='Empty'}}}
+                    return @{id=$script:disk;managedBy=$script:vm;tags=@{'az-vm-upgrade-disposable'='true'}
+                        properties=@{uniqueId='synthetic-incarnation';diskSizeGB=8;creationData=@{createOption='Empty'}}}
                 }
                 @{properties=@{diskSizeGB=64}}
             }
@@ -101,7 +119,7 @@ Write-UpgradeJson @{status='restoration-verified';synthetic=$true} $OutputPath
                 switch ($Arguments[0]+':'+$Arguments[1]) {
                     'account:show' { return @{ id=$script:sub } }
                     'group:exists' { return $script:exists }
-                    'group:show' { return @{location='swedencentral';tags=@{'az-vm-upgrade-disposable'='true'}} }
+                    'group:show' { return @{name=$script:group;location='swedencentral';tags=@{'az-vm-upgrade-disposable'='true'}} }
                     'group:delete' { $script:exists=$false;$script:deleted=$true;return }
                     'resource:list' { return @() }
                     'snapshot:create' { return @{id=($script:vm -replace '/virtualMachines/.*$', '/snapshots/synthetic')} }
@@ -109,6 +127,10 @@ Write-UpgradeJson @{status='restoration-verified';synthetic=$true} $OutputPath
                         $script:guestCalls++
                         $message = if ($script:guestCalls -eq 1) {
                             "ID_BUS=scsi`nID_SERIAL_SHORT=60022480aabb`nAZURE_DISK_LUN=0`nAZURE_DISK_TYPE=data`n"
+                        } elseif ($script:useArmMode -and $script:identityRefused) {
+                            'AZVM_DISK_IDENTITY_OBSERVATION={"identityMode":"arm-azure-udev","storageProfile":{"dataDisks":[{"lun":"0","managedDisk":{"id":"synthetic-wrong-disk"}}]}} RuntimeError: Exact managed disk identity and unique LUN not confirmed by IMDS'
+                        } elseif ($script:useArmMode) {
+                            'AZVM_DISK_IDENTITY_OBSERVATION={"identityMode":"arm-azure-udev","storageProfile":{"dataDisks":[]}} Only the explicitly identified new test data disk was initialized'
                         } elseif ($script:identityRefused) {
                             'RuntimeError: Exact managed disk identity and unique LUN not confirmed by IMDS'
                         } else { 'Only the explicitly identified new test data disk was initialized' }
@@ -140,6 +162,37 @@ Write-UpgradeJson @{status='restoration-verified';synthetic=$true} $OutputPath
             Should -Invoke Invoke-VmUpgrade -Times 0 -Exactly
             (Read-UpgradeJson (Join-Path $script:out 'resize-initialize-result.json')).value[0].message |
                 Should -Match 'Exact managed disk identity'
+        }
+        It 'runs explicit ARM-mode helper through full mocked cycle and exact cleanup' {
+            $script:useArmMode = $true
+            & $script:armWrapper
+            $r = Read-UpgradeJson (Join-Path $script:out 'resize-cycle.json')
+            $r.status | Should -Be 'completed'
+            $r.identityMode | Should -Be 'arm-azure-udev'
+            $r.cleanup | Should -Be 'pass'
+            $j = Read-UpgradeJson (Join-Path $script:out 'resize-initialization-journal.json')
+            $j.identityMode | Should -Be 'arm-azure-udev'
+            $j.identityEvidence.disk.id | Should -Be $script:disk
+            $j.status | Should -Be 'initialized'
+            $j.observations.initialization.value[0].message | Should -Match '"dataDisks":\[\]'
+            $r.steps.name | Should -Contain 'final-normal-terraform-noop'
+            $script:deleted | Should -BeTrue
+        }
+        It 'runs explicit ARM-mode guest refusal through cleanup without preparation or resize' {
+            $script:useArmMode = $true
+            $script:identityRefused = $true
+            { & $script:armWrapper } | Should -Throw '*Initialization not proved*'
+            $r = Read-UpgradeJson (Join-Path $script:out 'resize-cycle.json')
+            $r.status | Should -Be 'failed'
+            $r.identityMode | Should -Be 'arm-azure-udev'
+            $r.cleanup | Should -Be 'pass'
+            $r.steps.Count | Should -Be 1
+            $j = Read-UpgradeJson (Join-Path $script:out 'resize-initialization-journal.json')
+            $j.status | Should -Be 'failed'
+            $j.observations.initialization.value[0].message | Should -Match 'Exact managed disk identity'
+            $j.observations.initialization.value[0].message | Should -Match 'synthetic-wrong-disk'
+            $script:deleted | Should -BeTrue
+            Should -Invoke Invoke-VmUpgrade -Times 0 -Exactly
         }
     }
 }

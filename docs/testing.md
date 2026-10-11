@@ -145,15 +145,62 @@ IMDS identities still stop before formatting. Do not substitute size/order
 inference, retry formatting or declare metadata propagation as the cause
 without actual response evidence.
 
-The IMDS prerequisite is an additional toolkit safety policy, not a
+The default IMDS prerequisite is an additional toolkit safety policy, not a
 Microsoft-required step in ARM-to-guest LUN mapping. The request uses a
 documented API version and object endpoint. Resize-07 returned an empty
 data-disk array despite confirmed ARM/guest attachment; no documented
 freshness guarantee or underlying cause was established. See the
 [public-source review](sources.md#imds-request-and-initialization-policy-review-2026-10-11).
-The guard is unchanged. Any switch to Microsoft's ARM-plus-udev/HCTL
-mapping basis needs explicit identity-method approval before implementation
-or live formatting; it is not authorized by earlier lab approvals.
+The default guard is unchanged. The explicitly approved offline alternative
+is described below; earlier lab approvals do not authorize live formatting
+with the changed method.
+
+### Explicit synthetic SCSI lab identity mode
+
+`tests/integration/Invoke-LabDiskInitialization.ps1` defaults to
+`imds-required`. The alternative `arm-azure-udev` is opt-in, only for a
+new empty managed SCSI data disk in an exact tagged disposable lab group.
+It requires separate formatting, identity-method and exclusive-window
+consent. **Approval to implement this mode offline does not authorize
+running the command below.**
+
+```powershell
+# Only within a separately approved exact paid/formatting scope:
+.\tests\integration\Invoke-LabDiskInitialization.ps1 `
+  -VmId '<exact-approved-vm-id>' -DiskId '<exact-new-test-disk-id>' `
+  -TestResourceGroup '<approved-azvm-upgrade-lab-group>' `
+  -ExpiresAt '<approved-cleanup-reserve-time>' `
+  -IdentityMode arm-azure-udev -LiveTestConsent `
+  -ArmUdevIdentityConsent -ExclusiveWindowConsent `
+  -OutputPath '<protected-ignored-initialization-journal.json>'
+```
+
+The harness retains raw account/group/VM/disk/serial observations before
+validation, then refreshes ARM attachment and disk ownership after serial
+capture. Both reads require exact scoped IDs, disposable tags, `Empty`
+creation provenance, one unique LUN0, SCSI, OS-disk exclusion and matching
+`managedBy`. Disk `uniqueId` must remain unchanged; it is an ARM resource
+incarnation identifier, never a substitute for the captured guest serial.
+The protected initialization journal binds the chosen mode, exact resources,
+expiry, fresh ARM proof, serial and raw guest response. The guest marker emits
+only the ARM proof header and consumed udev properties, not full ARM
+resources, to avoid duplicating large payloads in bounded Run Command output;
+full ARM observations/proof stay in the protected local journal. A wrapper must also
+record its selected mode in its cycle journal before invoking this helper,
+then use its existing stop-and-exact-cleanup finalizer on refusal.
+
+The guest checks proof freshness (at most ten minutes, at most 30 seconds
+future-clock skew) and unexpired consent bounded to four hours. IMDS is still
+queried and retained. An empty `dataDisks` array is allowed **only in the
+explicit alternative mode**, with matching IMDS OS identity and valid
+ARM proof. Nonempty metadata must corroborate the exact single disk/LUN;
+wrong IDs/LUNs, duplicate or extra attachments, conflicting OS identity,
+malformed metadata and transport failures remain refusals. No automatic
+fallback or metadata retry is added. Microsoft Azure udev data/SCSI/LUN
+properties, HCTL, captured serial/lsblk agreement and every existing
+OS-ancestry, partition, mount, signature and fstab guard remain mandatory.
+The mode does not support production or NVMe initialization. Exclusive
+window consent is an operator declaration, not a distributed lock.
 
 Record the managed-data checksum, application health and accepted backup or
 documented recovery method before any upgrade. Resolve driver/boot/mount
@@ -232,12 +279,15 @@ Terraform, guest and nested-harness boundaries mocked:
 .\scripts\Test-SameInterfaceWrapperOffline.ps1 -WrapperPath '<reviewed-private-wrapper.ps1>'
 ```
 
-Two separately run tests cover success through final no-op/exact cleanup,
-and initial identity refusal through cleanup without preparation/resize.
+Four separately run tests cover legacy success/refusal and explicit
+ARM-mode success/refusal through final no-op or early-stop exact cleanup.
 The runner targets the reviewed wrapper's scope declarations and derives its
 isolated output directory from the exact `$out=(Resolve-Path ...).Path`
 declaration, never a general arbitrary script runner.
-It supplies nested preparation/recovery stubs; their actual bodies are
+The two new tests replace only the reviewed initialization block with the
+actual initialization-helper body and explicit mode/journal binding; they
+do not claim to run an unchanged future paid wrapper. All cloud/guest
+responses remain synthetic. The runner supplies nested preparation/recovery stubs; their actual bodies are
 covered separately by the standard tests. No real formatting or deployment
 occurs. Empty mocked inventory also exercises explicit inventory-publication
 failure without preventing exact cleanup. This is orchestration proof, not

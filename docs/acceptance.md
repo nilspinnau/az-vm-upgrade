@@ -10,7 +10,7 @@ AzureRM is pinned to 4.48.0; the provider lock file is committed.
 |---|---|
 | PowerShell parsing | All module, customer, guest, fixture and integration scripts passed |
 | Configured static analysis | Module, customer, guest and integration scripts passed |
-| Decision/orchestration tests | 168 Pester tests passed; no failures, skips or unrun tests. Includes atomic create/replace, transient/persistent reader locks, read-only failures, unchanged journal phase/intent on publication failure, encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
+| Decision/orchestration tests | 180 Pester tests passed; no failures, skips or unrun tests. Includes explicit ARM lab identity success/refusal and legacy IMDS preservation, atomic create/replace, transient/persistent reader locks, read-only failures, unchanged journal phase/intent on publication failure, encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
 | Guest script syntax | Bash syntax and embedded Python AST parsing passed; no guest script executed |
 | Terraform format/validate | Passed |
 | Installed provider schema | Linux/Windows size/controller/host-encryption and NIC acceleration attributes verified |
@@ -385,3 +385,28 @@ preparation/reboot/rollback, resize/data/network validation, sequential
 snapshot recovery/original restart and final normal Terraform no-op must
 all pass in a separately authorized future scope. No production or owner
 acceptance is inferred from this failed run.
+
+## Explicit lab identity mode: offline implementation
+
+Following public-source review, the owner explicitly approved **offline
+implementation only** of `arm-azure-udev` for new synthetic SCSI lab disks.
+Mandatory IMDS proof remains the default. The alternative binds fresh exact
+ARM ownership/provenance/single LUN, unchanged resource incarnation and
+captured serial with Microsoft's Azure udev/HCTL mapping, while retaining
+all pre-format exclusions. Empty IMDS data-disk metadata may be accepted
+only with this explicit mode/proof and matching OS identity; contradictory
+or malformed metadata is refused. No API-version change, propagation
+diagnosis, automatic fallback or retry was introduced.
+
+Offline regressions exercise the actual identity validator, actual
+initialization harness body, retained observations on refusal, and both
+legacy and explicit-mode whole-wrapper control flows with synthetic external
+responses. These are mocked proofs, not live initialization or a successful
+same-interface full cycle. No new Azure calls, resources or formatting were
+authorized or performed. See [the explicit test procedure](testing.md#explicit-synthetic-scsi-lab-identity-mode).
+
+The standard suite passed **180 Pester tests and six Terraform mocks**;
+the optional whole-wrapper runner separately passed **four tests**.
+The new guest-validator fixtures cover two positive and 34 refusal cases,
+including sanitized empty metadata, contradictory IDs/OS/LUNs, stale proof,
+wrong ownership/provenance/controller and unknown mode.

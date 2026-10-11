@@ -142,11 +142,13 @@ is not. Updating the API version or adding retries is not a proven remedy.
 
 Requiring exact independent IMDS ID/LUN proof is an additional toolkit
 initialization policy, not a prerequisite in Microsoft's ARM-to-guest LUN
-mapping procedure. The current guard remains unchanged and fail-closed.
+mapping procedure. The default mandatory-IMDS guard remains unchanged and fail-closed.
 Using fresh exact ARM attachment/ownership/provenance plus Microsoft Azure
 udev data-disk/LUN mapping and SCSI HCTL is a documented alternative mapping
-basis, but changing the approved identity policy requires explicit approval
-before implementation or live formatting. All serial continuity, unique
+basis. The user subsequently approved offline implementation of an explicit
+synthetic SCSI lab mode, not live formatting. The integration helper binds
+that choice and fresh scoped ARM proof in a protected initialization journal.
+All serial continuity, unique
 LUN, OS-ancestry, empty-signature and unmounted-disk guards must remain;
 size/order inference is not an alternative. Contradictory identity evidence
 must not be ignored. No new live test is justified merely by this review.

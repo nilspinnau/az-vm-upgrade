@@ -17,16 +17,46 @@ metadata="$(curl --noproxy '*' --fail --silent --show-error --max-time 10 -H Met
 properties="$(udevadm info --query=property --name="$device")"
 hctl="$(lsblk -dn -o HCTL "$device" | tr -d '[:space:]')"
 METADATA="$metadata" UDEV_PROPERTIES="$properties" HCTL="$hctl" python3 - <<'PY'
-import json, os
-def verify_scsi_identity(metadata, properties, hctl, expected_id, expected_serial):
+import base64, datetime, json, os
+def verify_scsi_identity(metadata, properties, hctl, expected_id, expected_serial, mode="imds-required", arm=None):
     print("AZVM_DISK_IDENTITY_OBSERVATION=" + json.dumps({
-        "schemaVersion": "lab-disk-identity/1.0",
+        "schemaVersion": "lab-disk-identity/1.1",
+        "identityMode": mode,
+        "armEvidence": {key: arm.get(key) for key in ("schemaVersion", "identityMode", "observedAt", "expiresAt", "labOnly")} if isinstance(arm, dict) else arm,
         "expectedManagedDiskId": expected_id,
         "expectedScsiSerial": expected_serial,
         "storageProfile": metadata,
-        "udev": properties,
+        "udev": {key: properties.get(key) for key in ("ID_BUS", "AZURE_DISK_TYPE", "AZURE_DISK_LUN", "ID_SERIAL_SHORT")},
         "hctl": hctl,
     }), flush=True)
+    if mode not in ("imds-required", "arm-azure-udev"):
+        raise RuntimeError("Unknown identity mode; no fallback")
+    if mode == "arm-azure-udev":
+        if not isinstance(arm, dict) or arm.get("schemaVersion") != "lab-arm-identity/1.0" or arm.get("identityMode") != mode or arm.get("labOnly") is not True:
+            raise RuntimeError("Explicit synthetic lab ARM identity evidence required")
+        now = datetime.datetime.now(datetime.timezone.utc)
+        observed = datetime.datetime.fromisoformat(arm["observedAt"])
+        expires = datetime.datetime.fromisoformat(arm["expiresAt"])
+        if observed.tzinfo is None or expires.tzinfo is None or not -30 <= (now - observed).total_seconds() <= 600 or not observed < expires or not now < expires <= observed + datetime.timedelta(hours=4):
+            raise RuntimeError("ARM identity evidence or consent is stale/invalid")
+        vm, disk = arm["vm"], arm["disk"]
+        vm_id = vm["id"]
+        group = arm["testResourceGroup"]
+        if not isinstance(group, str) or not group.startswith("azvm-upgrade-lab-") or not vm_id.lower().endswith("/providers/microsoft.compute/virtualmachines/" + arm["vmName"].lower()):
+            raise RuntimeError("Not an exact synthetic lab VM scope")
+        scope = "/subscriptions/" + arm["subscriptionId"] + "/resourceGroups/" + group
+        if not vm_id.lower().startswith(scope.lower() + "/providers/microsoft.compute/virtualmachines/") or not expected_id.lower().startswith(scope.lower() + "/providers/microsoft.compute/disks/"):
+            raise RuntimeError("VM/disk outside exact approved lab scope")
+        profile = vm["properties"]["storageProfile"]
+        attached = profile["dataDisks"]
+        if vm.get("tags", {}).get("az-vm-upgrade-disposable") != "true" or disk.get("tags", {}).get("az-vm-upgrade-disposable") != "true" or profile.get("diskControllerType") != "SCSI":
+            raise RuntimeError("Disposable ownership/SCSI controller not proved")
+        if disk["id"].lower() != expected_id.lower() or disk.get("managedBy", "").lower() != vm_id.lower() or disk["properties"]["creationData"]["createOption"] != "Empty" or not disk["properties"].get("uniqueId"):
+            raise RuntimeError("Exact owned new empty managed disk not proved")
+        if len(attached) != 1 or str(attached[0].get("lun")) != "0" or attached[0]["managedDisk"]["id"].lower() != expected_id.lower() or profile["osDisk"]["managedDisk"]["id"].lower() == expected_id.lower():
+            raise RuntimeError("Exact unique ARM LUN/OS exclusion not proved")
+        if arm.get("expectedScsiSerial") != expected_serial:
+            raise RuntimeError("ARM evidence serial binding changed")
     if not isinstance(metadata, dict) or not isinstance(metadata.get("dataDisks"), list):
         raise RuntimeError("IMDS storageProfile/dataDisks response shape is missing or invalid; see retained identity observation")
     disks = metadata["dataDisks"]
@@ -34,8 +64,12 @@ def verify_scsi_identity(metadata, properties, hctl, expected_id, expected_seria
            or not isinstance(d["managedDisk"].get("id"), str) for d in disks):
         raise RuntimeError("IMDS managed disk identity is missing or invalid; see retained identity observation")
     at_lun = [d for d in disks if str(d.get("lun")) == "0"]
-    if len(at_lun) != 1 or at_lun[0].get("managedDisk", {}).get("id", "").lower() != expected_id.lower():
+    if mode == "arm-azure-udev" and metadata.get("osDisk", {}).get("managedDisk", {}).get("id", "").lower() != arm["vm"]["properties"]["storageProfile"]["osDisk"]["managedDisk"]["id"].lower():
+        raise RuntimeError("IMDS OS identity contradicts or cannot corroborate ARM evidence")
+    if (mode == "imds-required" or disks) and (len(at_lun) != 1 or at_lun[0]["managedDisk"]["id"].lower() != expected_id.lower()):
         raise RuntimeError("Exact managed disk identity and unique LUN not confirmed by IMDS; see retained identity observation")
+    if mode == "arm-azure-udev" and disks and len(disks) != 1:
+        raise RuntimeError("IMDS attachment count contradicts exact single ARM data disk")
     if properties.get("ID_BUS") != "scsi" or properties.get("AZURE_DISK_TYPE") != "data" or properties.get("AZURE_DISK_LUN") != "0":
         raise RuntimeError("Azure udev mapping does not prove a managed SCSI data disk at LUN 0")
     if len(hctl.split(":")) != 4 or hctl.split(":")[-1] != "0":
@@ -44,8 +78,11 @@ def verify_scsi_identity(metadata, properties, hctl, expected_id, expected_seria
     if not expected_serial or not serial or serial != expected_serial:
         raise RuntimeError("Mapped SCSI serial changed since read-only identity capture")
 properties = dict(line.split("=", 1) for line in os.environ["UDEV_PROPERTIES"].splitlines() if "=" in line)
+arm_encoded = os.environ.get("AZVM_ARM_IDENTITY_BASE64")
 verify_scsi_identity(json.loads(os.environ["METADATA"]), properties, os.environ["HCTL"],
-                     os.environ["AZVM_EXPECTED_DISK_ID"], os.environ["AZVM_EXPECTED_SCSI_SERIAL"])
+                     os.environ["AZVM_EXPECTED_DISK_ID"], os.environ["AZVM_EXPECTED_SCSI_SERIAL"],
+                     os.environ.get("AZVM_IDENTITY_MODE", "imds-required"),
+                     json.loads(base64.b64decode(arm_encoded, validate=True)) if arm_encoded else None)
 PY
 serial="$(lsblk -dn -o SERIAL "$device" | tr -d '[:space:]-' | tr '[:upper:]' '[:lower:]')"
 expected="$(printf '%s' "$AZVM_EXPECTED_SCSI_SERIAL" | tr -d '[:space:]-' | tr '[:upper:]' '[:lower:]')"
