@@ -46,7 +46,7 @@ Live observations are scoped to the exact disposable profile, never a blanket pr
 | Terraform live no-op reconciliation | Implemented / Partial live | Real normal target plan has zero resource changes; journal completion requires separate final owner acceptance |
 | Evidence freshness | Implemented | Expiry and guest freshness enforced |
 | Optional pinned upstream conversion | Partial | Manual, separately supported; see [nvme-backend.md](nvme-backend.md) |
-| Live acceptance | Partial | Exact observations and outstanding checks in acceptance record; no production promotion |
+| Live acceptance | Partial / repeat failed | First exact profile technically verified; follow-up preparation passed but migration post-health gate failed; Ubuntu22.04 module candidate was builtin and stopped. See acceptance record; no production promotion |
 
 Conservative exclusions are intentional. The documented no-temp-disk utility
 boundary and the broader platform NVMe page describe temporary-disk transitions

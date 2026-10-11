@@ -187,7 +187,9 @@ function Test-PostUpgradeGuest {
     if ($Live.vm.hardwareProfile.vmSize -cne $Plan.targetSize -or
         $Live.vm.storageProfile.diskControllerType -cne $Plan.targetController) { throw 'Post-upgrade model does not match target.' }
     if (@($Live.instanceView.statuses | Where-Object code -EQ 'PowerState/running').Count -ne 1 -or
-        @($Live.instanceView.statuses | Where-Object code -EQ 'ProvisioningState/succeeded').Count -ne 1) { throw 'VM instance is not healthy and running.' }
+        @($Live.instanceView.statuses | Where-Object code -EQ 'ProvisioningState/succeeded').Count -ne 1) {
+        throw "VM instance is not healthy and running. Observed status codes: $(@($Live.instanceView.statuses.code) -join ', ')."
+    }
     $guest = $Live.guest
     if (-not $guest -or $guest.complete -ne $true -or $guest.agentReady -ne $true -or
         $guest.pendingReboot -ne $false -or $guest.persistentMounts -ne $true) { throw 'Post-upgrade guest/agent health check failed.' }
@@ -335,6 +337,8 @@ function Invoke-VmUpgrade {
         if ($journal.phase -eq 'started') {
             Assert-UpgradeApproval $plan $approval
             $live = Get-VmEvidence -VmId $plan.vmId -GuestConsent -GuestNetworkProbeConsent:($plan.workloadReview.guestNetworkProbeConsent -eq $true)
+            $journal.validationEvidence = $live
+            Write-UpgradeJson $journal $journalPath
             if ($live.fingerprint -cne $journal.expectedFingerprint) { throw 'Unexpected configuration drift before validation.' }
             Test-PostUpgradeGuest $plan $live
             Save-UpgradePhase $journal $journalPath 'verified' $live

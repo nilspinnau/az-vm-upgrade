@@ -481,11 +481,24 @@ InModuleScope AzVmUpgrade {
             { Invoke-VmUpgrade $script:planPath $script:approvalPath -Confirm:$false } | Should -Throw '*hash*'
             Should -Invoke Invoke-UpgradeAz -Times 0 -Exactly
         }
+        It 'persists rejected validation evidence without promoting its fingerprint or phase' {
+            Mock Test-PostUpgradeGuest { throw 'Simulated observed instance-health failure' }
+            { Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false } | Should -Throw '*instance-health*'
+            $journal = Read-UpgradeJson (Get-ChildItem $script:journalDir -Filter *.journal.json).FullName
+            $journal.phase | Should -Be 'started'
+            $journal.validationEvidence.guest.complete | Should -BeTrue
+            $journal.validationEvidence.vm.hardwareProfile.vmSize | Should -Be $script:plan.targetSize
+            $journal.expectedFingerprint | Should -Be $journal.lastEvidence.fingerprint
+            $journal.pendingOperation | Should -BeNullOrEmpty
+            $journal.events.phase | Should -Not -Contain 'verified'
+        }
         It 'stops at verified until actual owner acceptance and resumes without repeating mutations' {
             $script:requireRealOwnerAcceptance = $true
             { Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false } | Should -Throw '*not complete*'
             $journal = Read-UpgradeJson (Get-ChildItem $script:journalDir -Filter *.journal.json).FullName
             $journal.phase | Should -Be 'verified'
+            $journal.validationEvidence.guest.complete | Should -BeTrue
+            $journal.validationEvidence.vm.hardwareProfile.vmSize | Should -Be $script:plan.targetSize
             $ownerPath = Join-Path $TestDrive 'post-upgrade-owner.json'
             Write-UpgradeJson @{
                 schemaVersion='acceptance/1.0';planHash=$script:plan.hash;vmId=$script:plan.vmId

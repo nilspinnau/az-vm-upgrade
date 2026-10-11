@@ -108,3 +108,11 @@ before each guest call. An `in-progress` journal means the outcome is unknown:
 run `Invoke-VmPreparation.ps1 -Mode Status` and review; apply/rollback are
 refused until then. Guest rollback restores recorded values only, is not a VM
 restore, and has not been proven live. See [guest-preparation.md](guest-preparation.md).
+## Rejected validation evidence
+
+The executor stores `validationEvidence` in the ignored VM journal before
+post-start checks. A failed observation never updates the expected fingerprint
+or promotes the phase to `verified`. Instance-health failures include observed
+status codes. Preserve this evidence and operation history before cleanup;
+the last successful start snapshot cannot establish the cause of a later
+failed observation.

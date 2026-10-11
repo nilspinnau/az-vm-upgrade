@@ -10,7 +10,7 @@ AzureRM is pinned to 4.48.0; the provider lock file is committed.
 |---|---|
 | PowerShell parsing | All module, customer, guest, fixture and integration scripts passed |
 | Configured static analysis | Module, customer, guest and integration scripts passed |
-| Decision/orchestration tests | 141 Pester tests passed; no failures, skips or unrun tests. Includes encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity and restoration evidence/gates. Upstream catalog hashes verified against locally fetched copies |
+| Decision/orchestration tests | 142 Pester tests passed; no failures, skips or unrun tests. Includes encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates and rejected-validation evidence persistence. Upstream catalog hashes verified against locally fetched copies |
 | Guest script syntax | Bash syntax and embedded Python AST parsing passed; no guest script executed |
 | Terraform format/validate | Passed |
 | Installed provider schema | Linux/Windows size/controller/host-encryption and NIC acceleration attributes verified |
@@ -140,6 +140,33 @@ do not assume another Ubuntu release exercises a modular NVMe driver.
 | Trusted Launch enablement / application certification | Separate explicit security/workload workflow; not covered by this lab |
 | Actual MANA VF traffic / fleet retirement discovery coverage | Unproven; no claim inferred from driver presence or single-VM evidence |
 
-No further paid scope is authorized by conditional acceptance. The journal
+Conditional acceptance alone does not authorize paid scope. The earlier journal
 must remain `verified`, not `reconciled`, until final owner acceptance is
 explicitly supplied.
+
+## Approved sequential follow-up (2026-10-11)
+
+The owner separately approved one final-harness repeat and one exact Ubuntu
+22.04 module-staged candidate, sequentially in Sweden Central, within a new
+USD 3/four-hour window and an absolute 18:00 UTC teardown deadline. Neither
+approval constitutes final workload-owner acceptance.
+
+| Follow-up | Actual result |
+|---|---|
+| Ubuntu 24.04 repeat | Final preparation harness passed apply, reboot, fresh reassessment, checksum/health, real source Terraform no-op and rollback/reboot. Guarded D2as_v5/SCSI to D2as_v6/NVMe reached `started`, then failed instance-health validation. No verification/restore success claimed |
+| Repeat failure evidence | Last successful start evidence was healthy, but the subsequent failing observation was not retained by the previous engine. Exact Azure condition cannot be determined retrospectively. Executor now persists validation evidence before assertions and includes observed status codes in health errors, without advancing phase/fingerprint |
+| Repeat cleanup | Failure finalizer removed the exact repeat group and verified absence before the next deployment |
+| Ubuntu 22.04 candidate | Exact pinned image `Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:22.04.202608060` booted kernel `6.8.0-1064-azure`; both NVMe drivers reported `(builtin)`. The mandatory module-staged gate failed; no initialization, preparation or resize was attempted |
+| Follow-up cleanup/cost | Both exact groups absent with zero retained resources, verified at 15:11:26 UTC. Elapsed 1.264 hours; conservative USD 0.32 envelope estimate below the USD 3 cap. Final itemized bill unknown; delayed telemetry is not a real-time total |
+| Final corrected restore harness repeat | Not reached after the repeat's health gate failed; still unproven from a complete fresh run |
+
+No kernel upgrade, image substitution, hidden retry of mutation, security
+change, registration or quota increase was used to force a successful result.
+The earlier verified lab journal remains `verified`; this failed repeat remains
+`started`. Neither is accepted or reconciled on the owner's behalf.
+
+Remaining work is not cosmetic: diagnose a future failed instance observation
+from the newly retained evidence and complete a fresh full-cycle repeat; select
+a genuinely module-staged supported image through independently verified
+package/kernel configuration before requesting another exact paid scope.
+The Ubuntu release label alone cannot establish driver configuration.
