@@ -9,8 +9,8 @@ labs. There is no bypass for production, previews or unknown checks.
 | Configuration | Assessment | Automatic execution boundary |
 |---|---|---|
 | Standalone Linux / Windows | ARM, guest evidence where probe prerequisites work | Lab-only profiles below |
-| Ubuntu 22.04/24.04 x86_64 | Supported bounded probe | Candidate same-interface / Gen2 SCSI-to-NVMe lab paths; exact Ubuntu 24.04 preparation/reboot/rollback observed, not distro-wide certification |
-| Windows Server 2022 build 20348 AMD64 | Supported bounded probe | Candidate same-interface / Gen2 SCSI-to-NVMe lab paths; live tests not run |
+| Ubuntu 22.04/24.04 x86_64 | Supported bounded probe | Ubuntu 24.04 has exact disposable-lab evidence only for Gen2 SCSI-to-NVMe on one AMD size pair; same-interface resize and distro-wide certification are unproven. Ubuntu 22.04 live paths are untested |
+| Windows Server 2022 build 20348 AMD64 | Supported bounded probe | Candidate lab paths only; live tests not run |
 | SUSE/SLES SAP, RHEL, other builds | Evidence and action plan | Assessment-only; no inferred OS/version certification |
 | No-temp-disk source and target | Capability/guest checks | Required for every executable path |
 | Existing temp disk / NVMe local storage | Detects capabilities/dependencies | Blocked; reviewed rebuild/preview path outside this release |

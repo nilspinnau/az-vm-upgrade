@@ -136,7 +136,7 @@ need separately scoped evidence before support claims expand.
 | Configuration / gap | Classification |
 |---|---|
 | Exact Ubuntu 24.04 AMD builtin-driver path | Two successful live migrations observed; one fresh corrected full-cycle preparation/migration/restore run passed. One intervening repeat failed health validation without retaining the failed observation. Owner acceptance remains conditional |
-| Ubuntu 22.04 / module-staged drivers / same-interface resize | Offline implementation only; additional live evidence required |
+| Ubuntu 22.04 / module-staged drivers / same-interface resize | Offline implementation only; additional live evidence required. The exact Ubuntu 24.04 live profile covers D2as_v5/SCSI to D2as_v6/NVMe only, not same-interface resize |
 | Windows Server 2022, signed MANA installation | Offline candidate lab path; operator-supplied artifact and separate Windows live scope required; not a proven supported migration |
 | Other Linux distributions / other Windows builds | Assessment-only, outside declared automated support |
 | ADE/CMK, temp/complex storage, special placement, Gen1/architecture changes | Hard execution blocks; separate workflows, not implicit test authorization |

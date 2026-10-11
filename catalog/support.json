@@ -32,7 +32,7 @@
     }
   ],
   "labProfiles": [
-    {"pattern": "^ubuntu:24\\.04:x86_64$", "paths": ["same-interface", "gen2-scsi-nvme"], "status": "exact-profile-live-observed; full-harness-pass; disposable-lab-only"},
+    {"pattern": "^ubuntu:24\\.04:x86_64$", "paths": ["gen2-scsi-nvme"], "status": "exact-profile-live-observed; full-harness-pass; disposable-lab-only"},
     {"pattern": "^ubuntu:22\\.04:x86_64$", "paths": ["same-interface", "gen2-scsi-nvme"], "status": "offline-tested-only; one tested image/kernel had builtin nvme and nvme_core; no module-staged image is source-qualified"},
     {"pattern": "^windows:20348:AMD64$", "paths": ["same-interface", "gen2-scsi-nvme"], "status": "offline-tested-only"}
   ],

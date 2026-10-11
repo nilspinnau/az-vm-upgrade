@@ -66,6 +66,11 @@ InModuleScope AzVmUpgrade {
             $profile[0].failedMigrationAttempts | Should -Be 1
             $profile[0].productionSupport | Should -BeFalse
             $profile[0].ownerAcceptance | Should -Match 'pending'
+            $ubuntu24 = @($catalog.labProfiles | Where-Object pattern -CEQ '^ubuntu:24\.04:x86_64$')
+            $ubuntu24.Count | Should -Be 1
+            $ubuntu24[0].paths | Should -Contain 'gen2-scsi-nvme'
+            $ubuntu24[0].paths | Should -Not -Contain 'same-interface'
+            $ubuntu24[0].status | Should -Match 'disposable-lab-only'
             $jammy = @($catalog.labProfiles | Where-Object pattern -CEQ '^ubuntu:22\.04:x86_64$')
             $jammy.Count | Should -Be 1
             $jammy[0].status | Should -Match 'no module-staged image is source-qualified'
