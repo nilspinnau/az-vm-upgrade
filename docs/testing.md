@@ -213,9 +213,24 @@ It does not call guest code or Azure. Offline mocks are never labeled live succe
 | Terraform | Six provider-mocked profiles; input plan retained by caller and engine retains reconciliation JSON before rejection | Real normal source/target no-op |
 | Exact group teardown | Prior lab failure finalizers independently verified absent groups; recovery offline ordering prohibits original start before marked-resource cleanup | Future paid scope must again prove exact group absence |
 
-This is **component control-flow proof**, not a mocked execution of the entire
-private top-level Terraform/deployment/formatting/group-teardown lab wrapper
-as one end-to-end program. CLI transport failures with no response remain
+The standard suite provides **component control-flow proof**. The optional
+runner below additionally executes the unchanged private same-interface
+wrapper as one program, in an isolated synthetic checkout with all Azure,
+Terraform, guest and nested-harness boundaries mocked:
+
+```powershell
+.\scripts\Test-SameInterfaceWrapperOffline.ps1 -WrapperPath '<reviewed-private-wrapper.ps1>'
+```
+
+Two separately run tests cover success through final no-op/exact cleanup,
+and initial identity refusal through cleanup without preparation/resize.
+The runner targets the reviewed wrapper's scope declarations and
+`out\lab-discovery\resize06` layout, never a general arbitrary script runner.
+It supplies nested preparation/recovery stubs; their actual bodies are
+covered separately by the standard tests. No real formatting or deployment
+occurs. Empty mocked inventory also exercises explicit inventory-publication
+failure without preventing exact cleanup. This is orchestration proof, not
+guest or cloud acceptance. CLI transport failures with no response remain
 exceptions, not fabricated observations. Offline tests cannot establish Azure
 allocation, metadata propagation, billing or production support.
 Preparation/recovery observations use protected sidecars alongside their
