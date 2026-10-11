@@ -72,6 +72,10 @@ Set `deployment_approved=true` **only** for the explicitly approved paid test.
 Set `encryption_at_host_prerequisites_verified=true` only after Registered
 feature evidence, both SKU capabilities and a fresh non-ADE image/platform-key
 disk layout are verified. No encryption disable is an acceptable fallback.
+Set `os_disk_size_gb` to the approved whole-GiB capacity when the lab has an
+explicit disk/cost bound; its default `null` preserves the image default.
+Never reduce it below the image's minimum or substitute an image to bypass
+the bound. A rejected create must stop and trigger exact-scope cleanup.
 
 For workspaces with a separate Azure CLI session directory, set
 `$env:AZURE_CONFIG_DIR` in the process running the CLI/Terraform. A working
@@ -185,6 +189,32 @@ resources; final lab-group teardown remains an operator action.
 correctness static rules, Pester decision/orchestration fixtures, exact pinned
 provider schema checks, Terraform format/validate and mocked profile tests.
 It does not call guest code or Azure. Offline mocks are never labeled live success.
+
+## Local evidence publication failures
+
+JSON evidence is written to a unique same-directory temporary file, flushed
+to disk and atomically published: `File.Replace` for an existing destination,
+`File.Move` without overwrite for a new one. Toolkit readers share deletion
+so a reader can finish reading the old complete snapshot during replacement.
+Do not edit evidence in place or permit multiple writers for the same journal.
+
+On Windows only, an existing non-read-only destination blocked by access,
+sharing or lock errors gets at most five local publication attempts with
+1.5 seconds total backoff and an explicit warning. No cloud or guest operation
+is retried. Read-only targets fail immediately; persistent ACL/lock failures
+still throw. The last published evidence stays unchanged and the unpublished
+same-directory `.tmp` is retained at the path reported in the error. These
+files can contain private evidence and must be protected like journals,
+never committed. Inspect both files and the original inner exception; do not
+rename a pending file into place to claim success or replay a migration
+because logging failed. Phase and operation-intent changes are admitted to
+the in-memory journal only after publication succeeds.
+
+The resize-05 failure was reproduced in ordinary local temporary storage.
+Overwrite-mode `File.Move` failed with an open delete-sharing reader, while
+`File.Replace` succeeded. The actual historical handle owner is unknown;
+the evidence file's reparse-point attribute alone does not identify OneDrive
+as the cause. See [acceptance](acceptance.md) for the retained run boundary.
 
 ## Preparation live harness
 

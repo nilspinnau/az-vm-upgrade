@@ -103,6 +103,15 @@ variable "data_disk_size_gb" {
   type    = number
   default = 8
 }
+variable "os_disk_size_gb" {
+  type     = number
+  default  = null
+  nullable = true
+  validation {
+    condition     = var.os_disk_size_gb == null ? true : var.os_disk_size_gb > 0 && floor(var.os_disk_size_gb) == var.os_disk_size_gb
+    error_message = "Supply a positive whole-GiB OS disk size or null for the image default."
+  }
+}
 variable "data_disk_sku" {
   type    = string
   default = "StandardSSD_LRS"

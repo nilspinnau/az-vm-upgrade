@@ -15,7 +15,12 @@ function Get-Field {
 
 function Read-UpgradeJson {
     param([Parameter(Mandatory)][string]$Path)
-    Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String
+    $stream = [IO.File]::Open([IO.Path]::GetFullPath($Path), [IO.FileMode]::Open, [IO.FileAccess]::Read,
+        ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    $reader = [IO.StreamReader]::new($stream)
+    try { $json = $reader.ReadToEnd() }
+    finally { $reader.Dispose() }
+    $json | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String
 }
 
 function Write-UpgradeJson {
@@ -23,11 +28,37 @@ function Write-UpgradeJson {
     $full = [IO.Path]::GetFullPath($Path)
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($full)) | Out-Null
     $temporary = "$full.$([guid]::NewGuid().ToString('N')).tmp"
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($Value | ConvertTo-Json -Depth 100))
+    $stream = [IO.File]::Open($temporary, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
     try {
-        [IO.File]::WriteAllText($temporary, ($Value | ConvertTo-Json -Depth 100), [Text.UTF8Encoding]::new($false))
-        [IO.File]::Move($temporary, $full, $true)
-    } finally {
-        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary }
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush($true)
+    } finally { $stream.Dispose() }
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        try {
+            if ([IO.File]::Exists($full)) {
+                # Overwrite-mode Move can deny replacement even with delete-sharing readers on Windows.
+                [IO.File]::Replace($temporary, $full, [System.Management.Automation.Language.NullString]::Value)
+            } else {
+                [IO.File]::Move($temporary, $full)
+            }
+            return
+        } catch [IO.IOException], [UnauthorizedAccessException] {
+            $failure = $_.Exception
+            while ($failure.InnerException) { $failure = $failure.InnerException }
+            $code = $failure.HResult -band 0xffff
+            $replacementBlocked = [IO.File]::Exists($full) -and
+                (([IO.File]::GetAttributes($full) -band [IO.FileAttributes]::ReadOnly) -eq 0)
+            if ($attempt -eq 5 -or -not $IsWindows -or $code -notin @(5, 32, 33) -or -not $replacementBlocked) {
+                throw [IO.IOException]::new(
+                    "Atomic evidence publication failed for '$full'. Previous evidence was not overwritten; unpublished evidence remains at '$temporary'. No cloud operation may be replayed based on this write failure.",
+                    $failure)
+            }
+            if ($attempt -eq 1) {
+                Write-Warning "Atomic evidence replacement was blocked for '$full'; retrying only the local rename, at most five attempts."
+            }
+            Start-Sleep -Milliseconds (100 * [Math]::Pow(2, $attempt - 1))
+        }
     }
 }
 

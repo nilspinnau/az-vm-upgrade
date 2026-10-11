@@ -23,6 +23,13 @@ variables {
 
 run "linux_plan" {
   command = plan
+  variables {
+    os_disk_size_gb = 64
+  }
+  assert {
+    condition     = one(azurerm_linux_virtual_machine.test[0].os_disk).disk_size_gb == 64
+    error_message = "The approved OS disk capacity bound must be explicit in the plan."
+  }
   assert {
     condition     = length(azurerm_linux_virtual_machine.test) == 1 && length(azurerm_windows_virtual_machine.test) == 0
     error_message = "A deployment must contain exactly one VM."
@@ -84,6 +91,7 @@ run "windows_plan" {
   command = plan
   variables {
     profile                = "windows"
+    os_disk_size_gb        = 64
     windows_admin_password = "OfflineFixture-NotARealCredential-123!"
     image = {
       publisher = "MicrosoftWindowsServer"
@@ -99,6 +107,10 @@ run "windows_plan" {
   assert {
     condition     = azurerm_windows_virtual_machine.test[0].encryption_at_host_enabled
     error_message = "Windows must also preserve the explicit host encryption setting."
+  }
+  assert {
+    condition     = one(azurerm_windows_virtual_machine.test[0].os_disk).disk_size_gb == 64
+    error_message = "The Windows mock must preserve the approved OS disk capacity."
   }
 }
 

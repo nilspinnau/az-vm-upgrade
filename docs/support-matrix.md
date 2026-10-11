@@ -48,6 +48,12 @@ Live observations are scoped to the exact disposable profile, never a blanket pr
 | Optional pinned upstream conversion | Partial | Manual, separately supported; see [nvme-backend.md](nvme-backend.md) |
 | Live acceptance | Partial / exact repeat passed | Fresh complete final harness and Terraform no-op passed for exact pinned Ubuntu 24.04 AMD profile. Ubuntu 22.04 module candidate was builtin and stopped. Conditional owner acceptance, other configurations and production support remain unproven; see acceptance record |
 
+The separately approved same-interface resize-05 attempt stopped during local
+preparation-result publication, before resize or recovery. Its exact group
+was deleted and absence verified. The atomic publication correction is
+offline-tested, not a successful same-interface migration; catalog scope is
+unchanged.
+
 Conservative exclusions are intentional. The documented no-temp-disk utility
 boundary and the broader platform NVMe page describe temporary-disk transitions
 differently; this toolkit does not silently pick a permissive interpretation

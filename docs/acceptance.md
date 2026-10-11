@@ -10,7 +10,7 @@ AzureRM is pinned to 4.48.0; the provider lock file is committed.
 |---|---|
 | PowerShell parsing | All module, customer, guest, fixture and integration scripts passed |
 | Configured static analysis | Module, customer, guest and integration scripts passed |
-| Decision/orchestration tests | 143 Pester tests passed; no failures, skips or unrun tests. Includes encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
+| Decision/orchestration tests | 150 Pester tests passed; no failures, skips or unrun tests. Includes atomic create/replace, transient/persistent reader locks, read-only failures, unchanged journal phase/intent on publication failure, encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
 | Guest script syntax | Bash syntax and embedded Python AST parsing passed; no guest script executed |
 | Terraform format/validate | Passed |
 | Installed provider schema | Linux/Windows size/controller/host-encryption and NIC acceleration attributes verified |
@@ -204,3 +204,77 @@ publisher-source-qualified modular candidate is known. Windows, other Linux
 builds, complex storage, Trusted Launch conversion, Gen1/architecture
 conversion and application certification remain unproven or separate
 workflows. No production promotion is implied.
+
+## Approved same-interface attempt (resize-05, 2026-10-11 UTC)
+
+The separately approved Sweden Central lab used the pinned image
+`Canonical:ubuntu-24_04-lts:server:24.04.202609040`, D2as_v5/SCSI with
+D4as_v5/SCSI intended, host encryption, Standard security, a bounded 64-GiB
+OS disk and exactly one 8-GiB synthetic data disk. Private networking, no
+public IP/NAT/Bastion, at most two snapshots/two restored disks and sequential
+recovery were approved within USD 2/four hours, with a 45-minute cleanup
+reserve. Approval did not authorize recreation after failure.
+
+| Gate | Retained result |
+|---|---|
+| Fresh subscription/image/quota/feature/price/permissions and saved Terraform plan | Passed; exactly nine creates, no updates/deletes, approved private topology |
+| Deployment and exact test-disk identity/initialization | Passed |
+| Source Terraform plan | Retained normal source plan JSON has zero non-no-op changes, generated before the preparation harness |
+| Preparation | Apply (two changes), restart, accepted fresh reassessment and checksum/mount/health passed |
+| Preparation-result publication | Failed with `Exception calling "Move" with "3" argument(s): "Access to the path is denied."` at the per-step `Write-UpgradeJson` call for `resize-prep-acceptance.json`. The last persisted steps end at managed-data-and-health. The next code step is Terraform no-op validation/publication; its pass is not durably recorded |
+| Rollback, resize, snapshots, restore, original restart, target Terraform no-op | Not completed or claimed; the run stopped before these gates |
+| Cleanup | Exact owned group deleted; independent existence check returned false and residual-resource count was zero |
+
+The run window was 21:30:03Z to 21:50:14Z, **0.336301 hours**. For the actual
+one-source-VM/two-disk sequence, conservatively rounding to one billed hour:
+compute USD 0.092; disk capacity USD 0.007397
+(`(4.8 + 0.6) / 730`); bounded transaction estimate USD 0.024596
+(`(81,200 + 13,400) / 10,000 * 0.0026`); subtotal **USD 0.123993**.
+Retaining the packet's USD 0.50 network/metering reserve gives
+**USD 0.623993**, below USD 2 as a model, not an invoice or hard billing cap.
+No recovery compute, snapshots or restored disks were created. Final retained
+month-to-date telemetry remained USD 1.92628324367656, unchanged from
+preflight; it is delayed and does not isolate this lab. Taxes, concurrent
+subscription use and unmetered/delayed network or transaction variation are
+not proven by this estimate.
+
+### Diagnosed software issue and remaining live proof
+
+The original failure files and exception remain private and unchanged.
+Offline Windows reproduction outside the synced checkout proved that
+overwrite-mode `File.Move` can return the same access-denied exception while
+a reader holds the destination, including a delete-sharing reader.
+`File.Replace` succeeded with that delete-sharing reader. Existing ACLs
+allowed full control and the historical destination was not read-only;
+its reparse-point metadata does not identify the cause. No handle-owner
+capture exists from the failure, so actual reader/process, provider or
+transient ACL involvement remains unknown.
+
+The corrected shared helper flushes a unique same-directory file, atomically
+replaces existing evidence, permits delete-sharing readers and bounds
+transient Windows publication retries without retrying mutations. Persistent
+failure throws with the original inner exception and retained unpublished
+evidence. Journal phase and operation intent stay unchanged on write failure.
+Seven offline regressions exercise creation/replacement, held-reader
+compatibility, transient release, persistent lock, read-only refusal and
+failed phase/intent publication. This is software proof, not a rerun of
+resize-05.
+
+The minimum remaining same-interface live proof is a **new separately
+approved** run of this exact full sequence: fresh gates and absent group;
+bounded 64-GiB OS/8-GiB data deployment; identity initialization;
+preparation/reboot/reassessment/rollback/reboot; source no-op; D2as_v5/SCSI
+to D4as_v5/SCSI with data/health/HTTPS/VF evidence; exactly two snapshots,
+two restored disks and one sequential private source-size recovery VM;
+recovery cleanup, original restart, normal target no-op, then exact-group
+deletion and independent absence verification. Refresh prices and the USD 2
+projection, choose a new explicit group/deadline, preserve the four-hour
+maximum/45-minute cleanup reserve and stop/clean up on any gate failure.
+The previous USD 1.811439 full-sequence envelope is not a fresh price gate or
+permission to create resources.
+
+No owner-accepted production path exists. The already observed exact Ubuntu
+24.04 AMD builtin-driver SCSI-to-NVMe disposable path remains the only
+live-observed migration boundary. Same-interface, Windows, module-staged
+drivers and other distributions are not promoted; no modular image is
+publisher-source-qualified.

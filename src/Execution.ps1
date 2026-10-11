@@ -163,21 +163,25 @@ function Assert-LiveUpgradeGate {
 function Save-UpgradePhase {
     param($Journal, [string]$Path, [string]$Phase, $Evidence)
     if ($Evidence) { Assert-UpgradeSecurityPreserved $Journal.originalEvidence $Evidence }
-    $Journal.phase = $Phase
-    $Journal.pendingOperation = $null
-    $Journal.lastError = $null
+    $next = @{} + $Journal
+    $next.phase = $Phase
+    $next.pendingOperation = $null
+    $next.lastError = $null
     if ($Evidence) {
-        $Journal.expectedFingerprint = $Evidence.fingerprint; $Journal.lastEvidence = $Evidence
+        $next.expectedFingerprint = $Evidence.fingerprint; $next.lastEvidence = $Evidence
     }
-    $Journal.events += @{ phase = $Phase; status = 'completed'; at = [DateTimeOffset]::UtcNow.ToString('o') }
-    Write-UpgradeJson $Journal $Path
+    $next.events += @{ phase = $Phase; status = 'completed'; at = [DateTimeOffset]::UtcNow.ToString('o') }
+    Write-UpgradeJson $next $Path
+    foreach ($key in $next.Keys) { $Journal[$key] = $next[$key] }
 }
 
 function Start-UpgradeOperation {
     param($Journal, [string]$Path, [string]$Operation)
-    $Journal.pendingOperation = @{ name = $Operation; requestId = [guid]::NewGuid().ToString(); at = [DateTimeOffset]::UtcNow.ToString('o') }
-    $Journal.events += @{ phase = $Operation; status = 'intent-recorded'; at = $Journal.pendingOperation.at; requestId = $Journal.pendingOperation.requestId }
-    Write-UpgradeJson $Journal $Path
+    $next = @{} + $Journal
+    $next.pendingOperation = @{ name = $Operation; requestId = [guid]::NewGuid().ToString(); at = [DateTimeOffset]::UtcNow.ToString('o') }
+    $next.events += @{ phase = $Operation; status = 'intent-recorded'; at = $next.pendingOperation.at; requestId = $next.pendingOperation.requestId }
+    Write-UpgradeJson $next $Path
+    foreach ($key in $next.Keys) { $Journal[$key] = $next[$key] }
     return $Journal.pendingOperation.requestId
 }
 
