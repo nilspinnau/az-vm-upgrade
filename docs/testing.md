@@ -224,8 +224,9 @@ Terraform, guest and nested-harness boundaries mocked:
 
 Two separately run tests cover success through final no-op/exact cleanup,
 and initial identity refusal through cleanup without preparation/resize.
-The runner targets the reviewed wrapper's scope declarations and
-`out\lab-discovery\resize06` layout, never a general arbitrary script runner.
+The runner targets the reviewed wrapper's scope declarations and derives its
+isolated output directory from the exact `$out=(Resolve-Path ...).Path`
+declaration, never a general arbitrary script runner.
 It supplies nested preparation/recovery stubs; their actual bodies are
 covered separately by the standard tests. No real formatting or deployment
 occurs. Empty mocked inventory also exercises explicit inventory-publication

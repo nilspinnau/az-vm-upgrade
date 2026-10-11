@@ -10,7 +10,8 @@ InModuleScope AzVmUpgrade {
             function terraform {}
             $script:wrapperSub = [regex]::Match($script:wrapperText, "(?m)^\`$sub='([^']+)'").Groups[1].Value
             $script:wrapperGroup = [regex]::Match($script:wrapperText, "(?m)^\`$rg='([^']+)'").Groups[1].Value
-            if (-not $script:wrapperSub -or -not $script:wrapperGroup) { throw 'Unsupported wrapper scope declaration' }
+            $script:wrapperOutput = [regex]::Match($script:wrapperText, "(?m)^\`$out=\(Resolve-Path ([^)]+)\)\.Path").Groups[1].Value
+            if (-not $script:wrapperSub -or -not $script:wrapperGroup -or -not $script:wrapperOutput) { throw 'Unsupported wrapper scope declaration' }
             $script:oldConfig = $env:AZURE_CONFIG_DIR
         }
         BeforeEach {
@@ -24,10 +25,10 @@ InModuleScope AzVmUpgrade {
             $script:disk = "/subscriptions/$script:sub/resourceGroups/$script:group/providers/Microsoft.Compute/disks/testvm-sentinel"
             $script:os = "/subscriptions/$script:sub/resourceGroups/$script:group/providers/Microsoft.Compute/disks/os"
             $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
-            foreach ($dir in @('out\lab-discovery\resize06','infra\test-vm','tests\integration','guest','src')) {
+            foreach ($dir in @($script:wrapperOutput,'infra\test-vm','tests\integration','guest','src')) {
                 [IO.Directory]::CreateDirectory((Join-Path $root $dir)) | Out-Null
             }
-            $script:out = Join-Path $root 'out\lab-discovery\resize06'
+            $script:out = Join-Path $root $script:wrapperOutput
             [IO.File]::WriteAllText((Join-Path $script:out 'lab-key.pub'), 'synthetic public key')
             [IO.File]::WriteAllText((Join-Path $root 'guest\lab-sentinel-linux.sh'), '# synthetic external formatting command; never executed')
             Write-UpgradeJson @{ observedAt = [DateTimeOffset]::UtcNow.ToString('o'); cost = @{ conservativeHeadroomUSD = 470 } } (Join-Path $script:out 'resize-preflight.json')

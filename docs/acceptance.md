@@ -342,3 +342,46 @@ failure. A future separately approved run can now distinguish actual IMDS
 shape/identity failures before formatting; it must still stop and clean up
 when exact identity is missing. Same-interface full-cycle success and
 owner-accepted production readiness remain unproven.
+
+## Approved resize-07 attempt (2026-10-11 UTC)
+
+The separately approved fresh scope retained the resize-06 configuration,
+USD 2 ceiling, four-hour maximum and 45-minute cleanup reserve, using
+`6162226` plus the offline-tested wrapper fixture output-path correction.
+Fresh read-only gates and the isolated nine-create plan passed.
+
+Deployment passed at 23:02:11Z. Exact ARM attachment and Azure udev
+SCSI/data/LUN0, captured serial and HCTL checks passed. Initialization
+then refused **before formatting**. This time the durable raw Run Command
+response included the actual structured observation: IMDS returned a valid
+storage profile with **`dataDisks: []`**, while reporting the expected image
+and an OS managed disk. It could not independently prove the expected
+managed data-disk ID at LUN0. The retained exception was
+`Exact managed disk identity and unique LUN not confirmed by IMDS`.
+Successful Run Command provisioning did not override the guest refusal.
+
+This establishes missing IMDS data-disk evidence for resize-07, not a
+normalization/input defect. Why IMDS omitted the attached disk remains
+unknown; neither metadata propagation nor platform causality is proven.
+Resize-06's missing response still prevents diagnosing that earlier run.
+No identity retry, guard weakening, formatting, preparation, resize,
+snapshot or recovery followed. Same-interface support is not promoted.
+The existing empty-metadata refusal regression now uses this sanitized
+response shape and checks the exact refusal plus retained observation.
+
+Exact cleanup passed; a separate CLI process verified the approved
+subscription, group absence and zero residual resources. The run lasted
+22:59:18Z to 23:07:07Z, **0.130294 hours**. The full authorized sequence
+model remained **USD 1.811439**, not a guaranteed invoice cap. For this
+actual source-VM/two-disk attempt, one conservatively rounded billed hour
+models USD 0.123993 plus USD 0.50 network/metering reserve =
+**USD 0.623993**, not an attributed bill. Delayed month-to-date ActualCost
+remained USD 2.01741901191173 after cleanup; that unchanged total does not
+establish a free run or its final cost. No paid resources remain.
+
+The diagnostic-retention and failure-cleanup path is now live-observed.
+The same-interface full cycle remains unproven: independent disk identity,
+preparation/reboot/rollback, resize/data/network validation, sequential
+snapshot recovery/original restart and final normal Terraform no-op must
+all pass in a separately authorized future scope. No production or owner
+acceptance is inferred from this failed run.

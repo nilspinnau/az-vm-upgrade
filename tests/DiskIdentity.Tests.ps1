@@ -24,7 +24,9 @@ cases = [
     ({"dataDisks": metadata["dataDisks"] * 2}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
     (metadata, props, "1:0:0:0", disk_id, ""),
     ({}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
-    ({"dataDisks": []}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
+    ({"dataDisks": [], "imageReference": {"id": "", "offer": "ubuntu-24_04-lts", "publisher": "Canonical", "sku": "server", "version": "24.04.202609040"},
+      "osDisk": {"diskSizeGB": "64", "managedDisk": {"id": disk_id + "-os", "storageAccountType": "StandardSSD_LRS"}, "osType": "Linux"},
+      "resourceDisk": {"size": "0"}}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
     ({"dataDisks": [{"lun": "0", "managedDisk": {}}]}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
     ({"dataDisks": [{"lun": "0", "managedDisk": {"id": ""}}]}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
     ({"dataDisks": {}}, props, "1:0:0:0", disk_id, props["ID_SERIAL_SHORT"]),
@@ -37,12 +39,14 @@ for args in cases:
     try:
         with contextlib.redirect_stdout(output):
             verify(*args)
-    except RuntimeError:
+    except RuntimeError as error:
         observed = json.loads(output.getvalue().split("AZVM_DISK_IDENTITY_OBSERVATION=", 1)[1])
         assert observed["storageProfile"] == args[0]
         assert observed["expectedManagedDiskId"] == args[3]
         assert observed["udev"] == args[1]
         assert observed["hctl"] == args[2]
+        if isinstance(args[0], dict) and args[0].get("dataDisks") == []:
+            assert "Exact managed disk identity and unique LUN not confirmed by IMDS" in str(error)
         continue
     raise AssertionError("Ambiguous or wrong identity accepted")
 verify({"dataDisks": [{"lun": "0", "managedDisk": {"id": disk_id}}]}, props,
