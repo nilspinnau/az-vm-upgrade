@@ -135,7 +135,8 @@ function Invoke-ArmPowerAction {
 function Assert-LiveUpgradeGate {
     param($Plan, $Approval, $Journal, [switch]$Guest)
     Assert-UpgradeApproval $Plan $Approval
-    $live = Get-VmEvidence -VmId $Plan.vmId -GuestConsent:$Guest
+    $live = Get-VmEvidence -VmId $Plan.vmId -GuestConsent:$Guest -GuestNetworkProbeConsent:($Guest -and $Plan.workloadReview.guestNetworkProbeConsent -eq $true)
+    Assert-UpgradeSecurityPreserved $Plan.evidence $live
     if ($live.tenantId -ine $Approval.tenantId -or $live.subscriptionId -ine $Approval.subscriptionId) { throw 'Azure account context changed.' }
     if ((Get-Field $live.vm 'tags.az-vm-upgrade-disposable') -ne 'true') { throw 'Disposable tag removed; stop.' }
     if ($live.fingerprint -cne $Journal.expectedFingerprint) { throw 'Live resources changed since approval or last completed phase; stop and reassess.' }
@@ -161,10 +162,13 @@ function Assert-LiveUpgradeGate {
 
 function Save-UpgradePhase {
     param($Journal, [string]$Path, [string]$Phase, $Evidence)
+    if ($Evidence) { Assert-UpgradeSecurityPreserved $Journal.originalEvidence $Evidence }
     $Journal.phase = $Phase
     $Journal.pendingOperation = $null
     $Journal.lastError = $null
-    if ($Evidence) { $Journal.expectedFingerprint = $Evidence.fingerprint; $Journal.lastEvidence = $Evidence }
+    if ($Evidence) {
+        $Journal.expectedFingerprint = $Evidence.fingerprint; $Journal.lastEvidence = $Evidence
+    }
     $Journal.events += @{ phase = $Phase; status = 'completed'; at = [DateTimeOffset]::UtcNow.ToString('o') }
     Write-UpgradeJson $Journal $Path
 }
@@ -179,6 +183,7 @@ function Start-UpgradeOperation {
 
 function Test-PostUpgradeGuest {
     param($Plan, $Live)
+    Assert-UpgradeSecurityPreserved $Plan.evidence $Live
     if ($Live.vm.hardwareProfile.vmSize -cne $Plan.targetSize -or
         $Live.vm.storageProfile.diskControllerType -cne $Plan.targetController) { throw 'Post-upgrade model does not match target.' }
     if (@($Live.instanceView.statuses | Where-Object code -EQ 'PowerState/running').Count -ne 1 -or
@@ -189,8 +194,19 @@ function Test-PostUpgradeGuest {
     if ($Plan.targetController -eq 'NVMe' -and $guest.actualController -ne 'NVMe') { throw 'Guest did not prove NVMe OS-disk use.' }
     if ($Plan.targetController -eq 'SCSI' -and $guest.actualController -ne 'SCSI') { throw 'Guest did not prove SCSI OS-disk use.' }
     if ($guest.storageIdentityHash -cne $Plan.evidence.guest.storageIdentityHash) { throw 'Persistent disk identities/mounts changed.' }
+    if ($Plan.evidence.guest.ContainsKey('managedDataMappings')) {
+        $before = @($Plan.evidence.guest.managedDataMappings | ForEach-Object { @{ lun = $_.lun; uuids = $_.uuids } })
+        $after = @($guest.managedDataMappings | ForEach-Object { @{ lun = $_.lun; uuids = $_.uuids } })
+        if ((Get-UpgradeHash $before) -cne (Get-UpgradeHash $after) -or
+            @($guest.managedDataMappings | Where-Object controller -NE $Plan.targetController).Count) {
+            throw 'Microsoft Azure data LUN mapping, filesystem identities or actual controller changed unexpectedly.'
+        }
+    }
     if (-not $Plan.evidence.guest.sentinelHash -or $guest.sentinelHash -cne $Plan.evidence.guest.sentinelHash) { throw 'Managed data checksum sentinel is missing or changed.' }
     if ($guest.applicationHealth -ne 'pass') { throw 'Configured lab application health sentinel is not healthy.' }
+    if ($Plan.workloadReview.guestNetworkProbeConsent -eq $true -and $guest.azureHttpsConnectivity -ne 'pass') {
+        throw 'Approved bounded Azure HTTPS connectivity probe did not pass.'
+    }
     if ($guest.manaDriver -ne 'pass' -or $guest.mellanoxDriver -ne 'pass') { throw 'Post-upgrade networking driver capability failed.' }
     if (@($Live.nics | Where-Object acceleratedNetworking -EQ $true).Count -and $guest.accelerationInUse -ne 'pass') {
         throw 'Accelerated Networking is configured but actual VF traffic use is not proved.'
@@ -318,7 +334,7 @@ function Invoke-VmUpgrade {
         }
         if ($journal.phase -eq 'started') {
             Assert-UpgradeApproval $plan $approval
-            $live = Get-VmEvidence -VmId $plan.vmId -GuestConsent
+            $live = Get-VmEvidence -VmId $plan.vmId -GuestConsent -GuestNetworkProbeConsent:($plan.workloadReview.guestNetworkProbeConsent -eq $true)
             if ($live.fingerprint -cne $journal.expectedFingerprint) { throw 'Unexpected configuration drift before validation.' }
             Test-PostUpgradeGuest $plan $live
             Save-UpgradePhase $journal $journalPath 'verified' $live
@@ -329,11 +345,12 @@ function Invoke-VmUpgrade {
                 if (-not $TerraformReconciliationPath) { throw 'Guest verified; provide a clean normal Terraform plan JSON to reconcile with -Resume. Do not apply an obsolete plan.' }
                 $tfPlan = Read-UpgradeJson $TerraformReconciliationPath
                 $result = Test-TerraformUpgradePlan -Plan $tfPlan -Mapping $plan.terraform.check.mapping -VmId $plan.vmId `
-                    -TargetSize $plan.targetSize -Controller $plan.targetController -Reconciliation
+                    -TargetSize $plan.targetSize -Controller $plan.targetController -Reconciliation `
+                    -ExpectedEncryptionAtHost (Get-Field $plan.evidence.vm 'securityProfile.encryptionAtHost')
                 if ($result.status -ne 'pass') { throw $result.detail }
                 $journal.terraformPlanHash = Get-UpgradeHash $tfPlan
             }
-            $live = Get-VmEvidence -VmId $plan.vmId -GuestConsent
+            $live = Get-VmEvidence -VmId $plan.vmId -GuestConsent -GuestNetworkProbeConsent:($plan.workloadReview.guestNetworkProbeConsent -eq $true)
             if ($live.fingerprint -cne $journal.expectedFingerprint) { throw 'Unexpected drift during reconciliation.' }
             Test-PostUpgradeGuest $plan $live
             Save-UpgradePhase $journal $journalPath 'reconciled' $live
@@ -373,7 +390,25 @@ Last error: $($journal.lastError.detail)
 5. Original-SKU allocation is not guaranteed. A rollback can fail; never delete the VM, detach disks, format storage or perform an automatic destructive restore.
 6. Protection reference: $($journal.protection.reference). Restore using the accepted recovery procedure and application-owner approval.
 7. Restore any recorded guest preparation settings only after confirming the restored controller is compatible. Reconcile Terraform desired HCL and use supported refresh/import workflows; never edit state JSON.
+8. Preserve the original security profile, including encryptionAtHost=$((Get-Field $original 'securityProfile.encryptionAtHost')). Snapshots protect disk contents, not VM host-encryption configuration: a restored VM must explicitly retain encryption at host, use a supported SKU and have the Registered subscription feature. Never disable encryption to regain capacity. DES/CMK, ADE and confidential security are separate unsupported recovery paths.
 
 This guide is instructions, not authorization or a runnable restore script.
 "@
+}
+
+function Assert-UpgradeSecurityPreserved {
+    param([Parameter(Mandatory)]$Original, [Parameter(Mandatory)]$Live)
+    if ((Get-UpgradeHash (Get-Field $Original.vm 'securityProfile')) -cne
+        (Get-UpgradeHash (Get-Field $Live.vm 'securityProfile'))) {
+        throw 'VM security profile changed, including encryption at host; stop rather than accept or disable encryption.'
+    }
+    foreach ($disk in $Original.disks) {
+        $current = @($Live.disks | Where-Object id -IEQ $disk.id)
+        if ($current.Count -ne 1) { throw 'Disk security evidence is missing or ambiguous.' }
+        foreach ($field in @('encryption','adeEnabled','adeSettingsPresent','securityProfile')) {
+            if ((Get-UpgradeHash (Get-Field $disk $field)) -cne (Get-UpgradeHash (Get-Field $current[0] $field))) {
+                throw "Disk $field changed; stop and review encryption/recovery."
+            }
+        }
+    }
 }

@@ -93,6 +93,10 @@ function Get-BoundedVmModel {
         priority = $properties.priority; additionalCapabilities = $properties.additionalCapabilities
         plan = $Model.plan; licenseType = $properties.licenseType
         extendedLocation = $Model.extendedLocation
+        encryptionExtensions = @($Model.resources | Where-Object {
+            (Get-Field $_ 'properties.publisher') -eq 'Microsoft.Azure.Security' -and
+            (Get-Field $_ 'properties.type') -in @('AzureDiskEncryption','AzureDiskEncryptionForLinux')
+        } | ForEach-Object { @{ publisher = $_.properties.publisher; type = $_.properties.type } })
         provisionVmAgent = if ($properties.storageProfile.osDisk.osType -eq 'Windows') {
             Get-Field $properties 'osProfile.windowsConfiguration.provisionVMAgent'
         } else { Get-Field $properties 'osProfile.linuxConfiguration.provisionVMAgent' }
@@ -102,7 +106,8 @@ function Get-BoundedVmModel {
 
 function Get-VmEvidence {
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$VmId, [switch]$GuestConsent)
+    param([Parameter(Mandatory)][string]$VmId, [switch]$GuestConsent, [switch]$GuestNetworkProbeConsent)
+    if ($GuestNetworkProbeConsent -and -not $GuestConsent) { throw 'Guest network testing also requires guest-command consent.' }
     $identity = Get-VmIdentity $VmId
     $account = Invoke-UpgradeAz @('account','show','--subscription',$identity.subscriptionId)
     if ($account.id -ne $identity.subscriptionId) { throw 'Subscription identity mismatch.' }
@@ -111,6 +116,17 @@ function Get-VmEvidence {
     $instance = Invoke-ArmRead "$VmId/instanceView" '2024-07-01'
     $vm = Get-BoundedVmModel $raw
     $checks = [Collections.Generic.List[object]]::new()
+    try {
+        $extensions = Invoke-ArmRead "$VmId/extensions" '2024-07-01'
+        if ($null -eq $extensions.value -or $extensions.nextLink) { throw 'Incomplete VM extension list; ADE coverage cannot be assumed.' }
+        $vm.encryptionExtensions = @($extensions.value | Where-Object {
+            $_.properties.publisher -eq 'Microsoft.Azure.Security' -and
+            $_.properties.type -in @('AzureDiskEncryption','AzureDiskEncryptionForLinux')
+        } | ForEach-Object { @{ publisher = $_.properties.publisher; type = $_.properties.type } })
+    } catch {
+        $status = if ($_.Exception.Message -match 'AuthorizationFailed|Forbidden|403') { 'denied' } else { 'failed' }
+        $checks.Add((New-Check 'ade-extension-coverage' $status $_.Exception.Message 'ARM extensions'))
+    }
     $disks = [Collections.Generic.List[object]]::new()
     $nics = [Collections.Generic.List[object]]::new()
     $diskRefs = @($vm.storageProfile.osDisk) + @($vm.storageProfile.dataDisks)
@@ -124,6 +140,8 @@ function Get-VmEvidence {
                 osType = $disk.properties.osType; hyperVGeneration = $disk.properties.hyperVGeneration
                 sizeGB = $disk.properties.diskSizeGB; encryption = $disk.properties.encryption
                 adeEnabled = Get-Field $disk 'properties.encryptionSettingsCollection.enabled'
+                adeSettingsPresent = $null -ne (Get-Field $disk 'properties.encryptionSettingsCollection')
+                securityProfile = $disk.properties.securityProfile
                 supportedCapabilities = $disk.properties.supportedCapabilities
                 maxShares = $disk.properties.maxShares; managedBy = $disk.managedBy
                 networkAccessPolicy = $disk.properties.networkAccessPolicy
@@ -153,9 +171,20 @@ function Get-VmEvidence {
     $skus = Invoke-UpgradeAz @('vm','list-skus','--subscription',$identity.subscriptionId,
         '--location',$vm.location,'--resource-type','virtualMachines','--all')
     $usage = Invoke-UpgradeAz @('vm','list-usage','--subscription',$identity.subscriptionId,'--location',$vm.location)
+    $hostEncryption = $null
+    if ((Get-Field $vm 'securityProfile.encryptionAtHost') -eq $true) {
+        try {
+            $feature = Invoke-UpgradeAz @('feature','show','--subscription',$identity.subscriptionId,
+                '--namespace','Microsoft.Compute','--name','EncryptionAtHost')
+            $hostEncryption = @{ state = Get-Field $feature 'properties.state' }
+        } catch {
+            $status = if ($_.Exception.Message -match 'AuthorizationFailed|Forbidden|403') { 'denied' } else { 'failed' }
+            $checks.Add((New-Check 'encryption-at-host-feature' $status $_.Exception.Message 'ARM feature'))
+        }
+    }
     $guest = $null
     if ($GuestConsent) {
-        try { $guest = Invoke-VmGuestProbe -VmId $VmId -OsType $vm.storageProfile.osDisk.osType }
+        try { $guest = Invoke-VmGuestProbe -VmId $VmId -OsType $vm.storageProfile.osDisk.osType -NetworkProbeConsent:$GuestNetworkProbeConsent }
         catch { $checks.Add((New-Check 'guest' failed $_.Exception.Message 'Run Command')) }
     } else { $checks.Add((New-Check 'guest' unknown 'Not collected: guest invocation requires explicit consent.' 'Run Command')) }
     $evidence = @{
@@ -167,6 +196,7 @@ function Get-VmEvidence {
             diskStatuses = @($instance.disks | ForEach-Object { @{ name = $_.name; statuses = $_.statuses } })
         }
         skus = @($skus); usage = @($usage); guest = $guest; checks = @($checks)
+        hostEncryption = $hostEncryption
         capacity = @{ status = 'unknown'; detail = 'Quota and advertised SKU availability do not guarantee allocation.' }
         fingerprint = $null
     }
@@ -176,16 +206,28 @@ function Get-VmEvidence {
 }
 
 function Invoke-VmGuestProbe {
-    param([string]$VmId, [ValidateSet('Linux','Windows')][string]$OsType)
+    param([string]$VmId, [ValidateSet('Linux','Windows')][string]$OsType, [switch]$NetworkProbeConsent)
     $identity = Get-VmIdentity $VmId
     $file = if ($OsType -eq 'Linux') { 'linux-probe.sh' } else { 'windows-probe.ps1' }
     $commandId = if ($OsType -eq 'Linux') { 'RunShellScript' } else { 'RunPowerShellScript' }
-    $result = Invoke-UpgradeAz @('vm','run-command','invoke','--ids',$VmId,'--subscription',$identity.subscriptionId,
-        '--command-id',$commandId,'--scripts',("@"+(Join-Path $script:RepositoryRoot "guest\$file"))) -TimeoutSeconds 600
-    $messages = @($result.value | Where-Object { $_.code -match 'StdOut' })
-    if ($messages.Count -ne 1) { throw 'Run Command returned no unique stdout result.' }
+    $scriptPath = Join-Path $script:RepositoryRoot "guest\$file"
+    $temporary = $null
+    try {
+        if ($NetworkProbeConsent) {
+            if ($OsType -ne 'Linux') { throw 'Bounded Azure HTTPS traffic probe is implemented for Linux only.' }
+            $temporary = Join-Path ([IO.Path]::GetTempPath()) "azvm-probe-$([guid]::NewGuid().ToString('N')).sh"
+            $body = Get-Content $scriptPath -Raw
+            [IO.File]::WriteAllText($temporary, "#!/usr/bin/env bash`nexport AZVM_NETWORK_PROBE_CONSENT='approved-azure-https-probe'`n" + ($body -replace '^#!.*\r?\n', ''))
+            $scriptPath = $temporary
+        }
+        $result = Invoke-UpgradeAz @('vm','run-command','invoke','--ids',$VmId,'--subscription',$identity.subscriptionId,
+            '--command-id',$commandId,'--scripts',("@"+$scriptPath)) -TimeoutSeconds 600
+    } finally {
+        if ($temporary -and (Test-Path -LiteralPath $temporary)) { Remove-Item -LiteralPath $temporary }
+    }
+    $stdout = Get-RunCommandStdout $result
     # Run Command output is bounded by Azure; markers distinguish truncation from valid evidence.
-    $match = [regex]::Match($messages[0].message, '(?s)AZVM_EVIDENCE_BEGIN\s*(\{.*?\})\s*AZVM_EVIDENCE_END')
+    $match = [regex]::Match($stdout, '(?s)AZVM_EVIDENCE_BEGIN\s*(\{.*?\})\s*AZVM_EVIDENCE_END')
     if (-not $match.Success) { throw 'Guest evidence is missing, truncated, or invalid.' }
     $guest = $match.Groups[1].Value | ConvertFrom-Json -AsHashtable -Depth 50 -DateKind String
     Test-UpgradeDocument $guest guest | Out-Null

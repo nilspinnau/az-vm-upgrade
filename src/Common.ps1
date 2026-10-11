@@ -144,3 +144,14 @@ function New-Check {
         [string]$Detail, [string]$Source = 'assessment')
     @{ name = $Name; status = $Status; detail = $Detail; source = $Source; observedAt = [DateTimeOffset]::UtcNow.ToString('o') }
 }
+function Get-RunCommandStdout {
+    param([Parameter(Mandatory)]$Result)
+    $messages = @($Result.value | Where-Object { $_.code -match 'StdOut' })
+    if ($messages.Count -eq 1) { return [string]$messages[0].message }
+    if ($messages.Count -gt 1) { throw 'Run Command returned ambiguous stdout results.' }
+    $combined = @($Result.value | Where-Object { $_.code -ceq 'ProvisioningState/succeeded' })
+    if ($combined.Count -ne 1) { throw 'Run Command returned no unique successful output.' }
+    $match = [regex]::Match([string]$combined[0].message, '(?s)\[stdout\]\r?\n(.*?)\r?\n\[stderr\](?:\r?\n|$)')
+    if (-not $match.Success) { throw 'Run Command combined output is missing or truncated.' }
+    return $match.Groups[1].Value
+}

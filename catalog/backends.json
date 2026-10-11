@@ -52,7 +52,7 @@
       "sourceArchive": "https://github.com/Azure/azure-vm-utils/archive/7989a36fcf233e4c4bd5fbc20964f3f038b08060.tar.gz",
       "sourceArchiveSha256": "844e36c5475334cebce15bb04ddcd5f3628c0ef9d37f4ad8d6708dd2d07d244b",
       "provides": ["azure-nvme-id", "udev rules for /dev/disk/azure symlinks", "udev NVMe io_timeout=240s for remote Azure NVMe devices (v0.7.0)"],
-      "installation": "Operator-driven through the distribution's own package channel when available; the toolkit never installs packages. Source packaging exists upstream for Debian, Fedora, Azure Linux/Mariner; channel availability per distribution release is not asserted here.",
+      "installation": "Pinned source is review-only, never automatically built or executed. Native preparation separately permits exact Ubuntu archive package versions listed in preparation.json; other channels remain manual. Source packaging exists upstream for Debian, Fedora, Azure Linux/Mariner; their package-channel availability is not asserted here.",
       "limits": "Provides device identification and symlinks only. It does not replace NVMe boot-driver staging or stable mount verification."
     },
     {
@@ -61,7 +61,7 @@
       "source": "https://learn.microsoft.com/azure/virtual-network/accelerated-networking-mana-windows",
       "driverEntryPoint": "https://aka.ms/manawindowsdrivers",
       "pinnable": false,
-      "reason": "The entry point is a redirect that currently resolves to a versioned zip on download.microsoft.com; no published hash or signature policy was verified, so the toolkit does not download or install it.",
+      "reason": "The entry point is mutable and never blindly downloaded. Native preparation separately supports operator-supplied artifacts bound to SHA256, validated Microsoft Authenticode signatures and the exact MANA PCI identity; see preparation.json.",
       "operatorChecks": ["Download from the Microsoft entry point on a trusted host", "Verify Authenticode signature of every .sys/.cat/.inf catalog with Get-AuthenticodeSignature (Microsoft publisher, status Valid)", "Install following the readme in the package; reboot and reassess", "Confirm Get-NetAdapter shows Microsoft Azure Network Adapter and counters increment"]
     }
   ]

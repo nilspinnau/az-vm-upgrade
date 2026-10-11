@@ -4,6 +4,14 @@ variable "subscription_id" {
 variable "location" {
   type = string
 }
+variable "egress_mode" {
+  type    = string
+  default = "none"
+  validation {
+    condition     = contains(["none", "default", "nat"], var.egress_mode)
+    error_message = "Explicitly select none, default subnet outbound (lab only), or separately priced NAT. A VM public IP is never attached."
+  }
+}
 variable "resource_group_name" {
   type = string
   validation {
@@ -82,6 +90,14 @@ variable "windows_admin_password" {
 variable "accelerated_networking" {
   type    = bool
   default = true
+}
+variable "encryption_at_host_enabled" {
+  type    = bool
+  default = true
+}
+variable "encryption_at_host_prerequisites_verified" {
+  type    = bool
+  default = false
 }
 variable "data_disk_size_gb" {
   type    = number

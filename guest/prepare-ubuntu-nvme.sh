@@ -37,6 +37,15 @@ mkdir -p "$STATE"
 record() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$CHANGES"; }
 has() { [[ ",$COMPONENTS," == *",$1,"* ]]; }
 
+boot_driver_present() {
+  local driver="$1" listing="$2" expression="$3"
+  if [ "$(modinfo -F filename "$driver")" = "(builtin)" ]; then
+    grep -E "$expression" "/lib/modules/$(uname -r)/modules.builtin" >/dev/null
+  else
+    grep -E "$expression" <<<"$listing" >/dev/null
+  fi
+}
+
 apply_nvme_boot() {
   command -v update-initramfs >/dev/null || { record nvme-boot initramfs failed "update-initramfs missing"; return 1; }
   modinfo nvme >/dev/null 2>&1 || grep -q '/nvme\.ko' "/lib/modules/$(uname -r)/modules.builtin" || { record nvme-boot nvme-module failed "nvme module unavailable"; return 1; }
@@ -51,8 +60,11 @@ apply_nvme_boot() {
   printf 'options nvme_core io_timeout=240\n' > /etc/modprobe.d/az-vm-upgrade-nvme.conf
   update-initramfs -u -k "$(uname -r)" >/dev/null
   local image="/boot/initrd.img-$(uname -r)"
-  if [ -e "$image" ] && lsinitramfs "$image" | grep -Eq '(^|/)nvme(-core)?\.ko'; then
-    record nvme-boot initramfs verified "$(basename "$image") contains nvme; reboot and reassess"
+  local listing
+  if [ -e "$image" ] && listing="$(lsinitramfs "$image")" &&
+      boot_driver_present nvme "$listing" '(^|/)nvme\.ko(\.(xz|zst|gz))?$' &&
+      boot_driver_present nvme_core "$listing" '(^|/)nvme[-_]core\.ko(\.(xz|zst|gz))?$'; then
+    record nvme-boot initramfs verified "$(basename "$image"): both drivers are built in or staged; reboot and reassess timeout"
   else
     record nvme-boot initramfs unverified "nvme not visible in rebuilt initramfs"; return 1
   fi

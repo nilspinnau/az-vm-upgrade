@@ -36,10 +36,11 @@ resource "azurerm_subnet" "test" {
   resource_group_name             = azurerm_resource_group.test.name
   virtual_network_name            = azurerm_virtual_network.test.name
   address_prefixes                = ["10.197.0.0/26"]
-  default_outbound_access_enabled = false
+  default_outbound_access_enabled = var.egress_mode == "default"
 }
 
 resource "azurerm_public_ip" "egress" {
+  count               = var.egress_mode == "nat" ? 1 : 0
   name                = "${var.vm_name}-egress"
   resource_group_name = azurerm_resource_group.test.name
   location            = azurerm_resource_group.test.location
@@ -49,6 +50,7 @@ resource "azurerm_public_ip" "egress" {
 }
 
 resource "azurerm_nat_gateway" "test" {
+  count               = var.egress_mode == "nat" ? 1 : 0
   name                = "${var.vm_name}-nat"
   resource_group_name = azurerm_resource_group.test.name
   location            = azurerm_resource_group.test.location
@@ -57,13 +59,15 @@ resource "azurerm_nat_gateway" "test" {
 }
 
 resource "azurerm_nat_gateway_public_ip_association" "test" {
-  nat_gateway_id       = azurerm_nat_gateway.test.id
-  public_ip_address_id = azurerm_public_ip.egress.id
+  count                = var.egress_mode == "nat" ? 1 : 0
+  nat_gateway_id       = azurerm_nat_gateway.test[0].id
+  public_ip_address_id = azurerm_public_ip.egress[0].id
 }
 
 resource "azurerm_subnet_nat_gateway_association" "test" {
+  count          = var.egress_mode == "nat" ? 1 : 0
   subnet_id      = azurerm_subnet.test.id
-  nat_gateway_id = azurerm_nat_gateway.test.id
+  nat_gateway_id = azurerm_nat_gateway.test[0].id
 }
 
 resource "azurerm_network_security_group" "test" {
@@ -110,6 +114,7 @@ resource "azurerm_linux_virtual_machine" "test" {
   zone                            = var.zone
   size                            = var.source_size
   disk_controller_type            = var.disk_controller_type
+  encryption_at_host_enabled      = var.encryption_at_host_enabled
   admin_username                  = "labadmin"
   disable_password_authentication = true
   network_interface_ids           = [azurerm_network_interface.test.id]
@@ -141,6 +146,10 @@ resource "azurerm_linux_virtual_machine" "test" {
   depends_on = [azurerm_network_interface_security_group_association.test, azurerm_subnet_nat_gateway_association.test, azurerm_nat_gateway_public_ip_association.test]
   lifecycle {
     precondition {
+      condition     = !var.encryption_at_host_enabled || var.encryption_at_host_prerequisites_verified
+      error_message = "Verify EncryptionAtHost Registered, source/target SKU support, fresh non-ADE image and platform-key disks before deployment."
+    }
+    precondition {
       condition     = var.ssh_public_key != null
       error_message = "Linux lab profiles require a supplied public SSH key."
     }
@@ -148,18 +157,19 @@ resource "azurerm_linux_virtual_machine" "test" {
 }
 
 resource "azurerm_windows_virtual_machine" "test" {
-  count                 = local.windows ? 1 : 0
-  name                  = var.vm_name
-  resource_group_name   = azurerm_resource_group.test.name
-  location              = azurerm_resource_group.test.location
-  zone                  = var.zone
-  size                  = var.source_size
-  disk_controller_type  = var.disk_controller_type
-  admin_username        = "labadmin"
-  admin_password        = var.windows_admin_password
-  network_interface_ids = [azurerm_network_interface.test.id]
-  provision_vm_agent    = true
-  tags                  = local.tags
+  count                      = local.windows ? 1 : 0
+  name                       = var.vm_name
+  resource_group_name        = azurerm_resource_group.test.name
+  location                   = azurerm_resource_group.test.location
+  zone                       = var.zone
+  size                       = var.source_size
+  disk_controller_type       = var.disk_controller_type
+  encryption_at_host_enabled = var.encryption_at_host_enabled
+  admin_username             = "labadmin"
+  admin_password             = var.windows_admin_password
+  network_interface_ids      = [azurerm_network_interface.test.id]
+  provision_vm_agent         = true
+  tags                       = local.tags
   os_disk {
     caching              = "ReadWrite"
     storage_account_type = "StandardSSD_LRS"
@@ -173,6 +183,10 @@ resource "azurerm_windows_virtual_machine" "test" {
   boot_diagnostics {}
   depends_on = [azurerm_network_interface_security_group_association.test, azurerm_subnet_nat_gateway_association.test, azurerm_nat_gateway_public_ip_association.test]
   lifecycle {
+    precondition {
+      condition     = !var.encryption_at_host_enabled || var.encryption_at_host_prerequisites_verified
+      error_message = "Verify EncryptionAtHost Registered, source/target SKU support, fresh non-ADE image and platform-key disks before deployment."
+    }
     precondition {
       condition     = var.windows_admin_password != null
       error_message = "Windows password must be supplied securely at runtime; state remains sensitive."

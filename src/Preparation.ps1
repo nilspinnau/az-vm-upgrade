@@ -45,7 +45,8 @@ function New-GuestPreparationPlan {
         expectedFingerprint = $Plan.evidence.fingerprint
         expectedModelHash = Get-PreparationModelHash $Plan.evidence
         expectedStorageIdentityHash = $guest.storageIdentityHash
-        preState = @{ bootId = $guest.bootId; nvmeBoot = $guest.nvmeBoot; azureVmUtils = $guest.azureVmUtils; manaDriver = $guest.manaDriver; actualController = $guest.actualController }
+        preState = @{ bootId = $guest.bootId; nvmeBoot = $guest.nvmeBoot; azureVmUtils = $guest.azureVmUtils; manaDriver = $guest.manaDriver; actualController = $guest.actualController
+            sentinelHash = $guest.sentinelHash; applicationHealth = $guest.applicationHealth }
     }
     if ($Component -contains 'azure-vm-utils') {
         $key = ($guest.osProfile -split ':')[0..1] -join ':'
@@ -88,9 +89,8 @@ function Get-GuestPreparationScript {
 
 function Read-PreparationManifest {
     param([Parameter(Mandatory)]$RunResult, [Parameter(Mandatory)]$Preparation, [Parameter(Mandatory)][string]$Action)
-    $messages = @($RunResult.value | Where-Object { $_.code -match 'StdOut' })
-    if ($messages.Count -ne 1) { throw 'Run Command returned no unique preparation output.' }
-    $match = [regex]::Match($messages[0].message, '(?s)AZVM_PREP_BEGIN\s*(\{.*?\})\s*AZVM_PREP_END')
+    $stdout = Get-RunCommandStdout $RunResult
+    $match = [regex]::Match($stdout, '(?s)AZVM_PREP_BEGIN\s*(\{.*?\})\s*AZVM_PREP_END')
     if (-not $match.Success) { throw 'Preparation manifest is missing or truncated; outcome is uncertain, run status before retrying.' }
     $manifest = $match.Groups[1].Value | ConvertFrom-Json -AsHashtable -Depth 20 -DateKind String
     Test-UpgradeDocument $manifest preparation-manifest | Out-Null
@@ -194,11 +194,21 @@ function Test-PreparationOutcome {
     function Add($name, $ok, $detail) { $checks.Add(@{ name = $name; status = $(if ($ok) { 'pass' } else { 'failed' }); detail = $detail }) }
     Add 'manifest' ($Manifest.status -eq 'ok' -and $Manifest.action -eq 'apply' -and $Manifest.planHash -ceq $Preparation.planHash) 'Guest manifest succeeded for this plan'
     Add 'guest-evidence' ([bool]$guest -and $guest.complete -eq $true -and $guest.agentReady -eq $true -and $guest.pendingReboot -eq $false) 'Fresh complete guest evidence, agent ready, no pending reboot'
+    try {
+        Assert-FreshEvidence $guest.observedAt (Get-PreparationCatalog).limits.maxGuestEvidenceAgeMinutes
+        Add 'guest-freshness' $true 'Guest evidence is within the preparation freshness limit'
+    } catch { Add 'guest-freshness' $false $_.Exception.Message }
     $after = $guest -and $guest.observedAt -and [DateTimeOffset]::Parse($guest.observedAt) -gt [DateTimeOffset]::Parse($Manifest.observedAt)
     Add 'observed-after-preparation' $after 'Guest evidence was collected after preparation'
     Add 'rebooted' ($guest -and $guest.bootId -and $guest.bootId -cne $Manifest.bootId) 'Boot ID changed since preparation'
     Add 'azure-configuration-unchanged' ((Get-PreparationModelHash $PostEvidence) -ceq $Preparation.expectedModelHash) 'VM, disks and NICs unchanged apart from ETags (no hidden resize)'
     Add 'storage-unchanged' ($guest.persistentMounts -eq $true -and $guest.storageIdentityHash -ceq $Preparation.expectedStorageIdentityHash) 'Persistent mounts and disk identities unchanged'
+    if (Get-Field $Preparation 'preState.sentinelHash') {
+        Add 'data-sentinel-unchanged' ($guest.sentinelHash -ceq $Preparation.preState.sentinelHash) 'Prepared guest retains the baseline managed-data checksum'
+    }
+    if ((Get-Field $Preparation 'preState.applicationHealth') -eq 'pass') {
+        Add 'application-health' ($guest.applicationHealth -eq 'pass') 'Baseline lab application sentinel remains healthy'
+    }
     Add 'mellanox-retained' ($guest.mellanoxDriver -eq 'pass') 'Mellanox/synthetic path retained'
     foreach ($component in $Preparation.components) {
         switch ($component) {

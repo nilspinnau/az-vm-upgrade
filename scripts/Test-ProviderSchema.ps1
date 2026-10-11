@@ -9,6 +9,7 @@ foreach ($type in @('azurerm_linux_virtual_machine','azurerm_windows_virtual_mac
     foreach ($name in @('size','disk_controller_type')) {
         if ($resources[$type].block.attributes[$name].type -ne 'string') { throw "$type.$name schema mismatch." }
     }
+    if ($resources[$type].block.attributes.encryption_at_host_enabled.type -ne 'bool') { throw "$type host-encryption schema mismatch." }
 }
 if ($resources.azurerm_network_interface.block.attributes.accelerated_networking_enabled.type -ne 'bool') { throw 'NIC accelerated_networking_enabled schema mismatch.' }
-Write-Output 'Pinned AzureRM VM size/controller and NIC acceleration schema verified; ForceNew behavior still requires source review and exact customer plans.'
+Write-Output 'Pinned AzureRM VM size/controller, host encryption and NIC acceleration schema verified; ForceNew behavior still requires source review and exact customer plans.'

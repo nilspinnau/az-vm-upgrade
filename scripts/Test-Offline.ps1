@@ -18,7 +18,7 @@ $findings = @(foreach ($directory in @('src','scripts','guest','tests\integratio
 })
 if ($findings.Count) { $findings | Format-Table -AutoSize | Out-String | Write-Error; throw 'Static analysis failed.' }
 $result = Invoke-Pester -Path (Join-Path $root 'tests') -PassThru -Output Detailed
-if ($result.FailedCount -gt 0 -or $result.PassedCount -eq 0) { throw 'Offline Pester tests failed or none ran.' }
+if ($result.FailedCount -gt 0 -or $result.FailedContainersCount -gt 0 -or $result.PassedCount -eq 0) { throw 'Offline Pester tests failed or none ran.' }
 $bash = (Get-Command bash -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $python = (Get-Command python -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 foreach ($file in Get-ChildItem (Join-Path $root 'guest') -Filter *.sh) {

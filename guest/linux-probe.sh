@@ -2,7 +2,7 @@
 set -euo pipefail
 command -v python3 >/dev/null || { echo "python3 is required for structured guest evidence" >&2; exit 2; }
 python3 - <<'PY'
-import datetime, hashlib, json, os, pathlib, re, shutil, subprocess, time
+import datetime, hashlib, json, os, pathlib, re, shutil, subprocess, time, urllib.error, urllib.request
 
 def run(args, optional=False):
     try:
@@ -17,6 +17,12 @@ def module(name):
     if builtin.exists() and re.search(r"/" + re.escape(name) + r"\.ko(?:\n|$)", builtin.read_text()):
         return True
     return run(["modinfo", name], optional=True) is not None
+
+def builtin_module(name):
+    filename = run(["modinfo", "-F", "filename", name], optional=True)
+    builtin = pathlib.Path("/lib/modules/" + os.uname().release + "/modules.builtin")
+    pattern = r"/" + re.escape(name).replace("_", "[-_]") + r"\.ko(?:\n|$)"
+    return filename is not None and filename.strip() == "(builtin)" and builtin.exists() and re.search(pattern, builtin.read_text()) is not None
 
 release = {}
 for line in pathlib.Path("/etc/os-release").read_text().splitlines():
@@ -42,6 +48,28 @@ temporary_dependency = pathlib.Path("/dev/disk/azure/resource").exists() or any(
 persistent = sorted((item.get("uuid"), sorted(p for p in (item.get("mountpoints") or []) if p))
                     for item in all_devices if item.get("uuid") and any(item.get("mountpoints") or []))
 storage_hash = hashlib.sha256(json.dumps(persistent, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+data_mappings = []
+for link in sorted(pathlib.Path("/dev/disk/azure/data/by-lun").glob("*")):
+    if not link.name.isdigit():
+        continue
+    matches = [item for item in all_devices if item["name"] == link.resolve().name and item["type"] == "disk"]
+    if len(matches) != 1:
+        raise RuntimeError("Azure data LUN symlink does not resolve to a unique disk")
+    mapped = matches[0]
+    properties_text = run(["udevadm", "info", "--query=property", "--name", str(link)])
+    properties = dict(line.split("=", 1) for line in properties_text.splitlines() if "=" in line)
+    if properties.get("AZURE_DISK_TYPE") != "data" or properties.get("AZURE_DISK_LUN") != link.name:
+        raise RuntimeError("Microsoft Azure udev data/LUN mapping is inconsistent")
+    members = []
+    def mapped_members(item):
+        if item.get("uuid"):
+            members.append(item["uuid"])
+        for child in item.get("children", []):
+            mapped_members(child)
+    mapped_members(mapped)
+    device_subsystem = (pathlib.Path("/sys/class/block") / link.resolve().name / "device/subsystem").resolve().name
+    data_mappings.append({"lun": int(link.name), "uuids": sorted(members),
+                          "controller": "NVMe" if device_subsystem == "nvme" else "SCSI" if device_subsystem == "scsi" and properties.get("ID_BUS") == "scsi" else "unknown"})
 root = next((item for item in all_devices if "/" in (item.get("mountpoints") or [])), None)
 root_parent = next((item for item in all_devices if root and item["name"] == (root.get("pkname") or root["name"])), root)
 actual = "unknown"
@@ -58,7 +86,8 @@ for args in (["lsinitramfs", "/boot/initrd.img-" + os.uname().release],
         break
 boot = "unknown"
 if initramfs is not None:
-    has_boot_driver = ("nvme.ko" in initramfs and "nvme-core.ko" in initramfs) or ("nvme.ko" in initramfs and "nvme_core.ko" in initramfs)
+    has_boot_driver = (builtin_module("nvme") or re.search(r"/nvme\.ko(?:\.(?:xz|zst|gz))?(?:\n|$)", initramfs) is not None) and (
+        builtin_module("nvme_core") or re.search(r"/nvme[-_]core\.ko(?:\.(?:xz|zst|gz))?(?:\n|$)", initramfs) is not None)
     timeout_path = pathlib.Path("/sys/module/nvme_core/parameters/io_timeout")
     timeout_ready = timeout_path.exists() and timeout_path.read_text().strip() == "240"
     boot = "pass" if has_boot_driver and timeout_ready else "failed"
@@ -75,6 +104,15 @@ for path in pathlib.Path("/sys/class/net").iterdir():
     if driver in ("mana", "mlx4_core", "mlx4_en", "mlx5_core"):
         packet_count = int((path / "statistics/rx_packets").read_text()) + int((path / "statistics/tx_packets").read_text())
     interfaces[path.name] = (driver, vf, packet_count)
+connectivity = "unknown"
+if os.environ.get("AZVM_NETWORK_PROBE_CONSENT") == "approved-azure-https-probe":
+    try:
+        with urllib.request.urlopen(urllib.request.Request("https://management.azure.com/", method="HEAD"), timeout=10) as response:
+            connectivity = "pass"
+    except urllib.error.HTTPError:
+        connectivity = "pass"  # HTTP error still proves unauthenticated HTTPS endpoint reachability.
+    except (urllib.error.URLError, TimeoutError):
+        connectivity = "failed"
 time.sleep(2)
 mana_in_use = "unknown"
 acceleration = "unknown"
@@ -120,7 +158,9 @@ probe = {
     "actualController": actual, "persistentMounts": stable,
     "layoutSupported": not unsupported_layout and not temporary_dependency and not swap_lines,
     "storageIdentityHash": storage_hash, "sentinelHash": sentinel_hash,
+    "managedDataMappings": sorted(data_mappings, key=lambda item: item["lun"]),
     "applicationHealth": health_status, "accelerationInUse": acceleration, "manaInUse": mana_in_use,
+    "azureHttpsConnectivity": connectivity,
     "azureVmUtils": vm_utils, "manaDevicePresent": mana_pci,
     "bootId": pathlib.Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
     "diskCount": sum(item["type"] == "disk" for item in all_devices),

@@ -47,6 +47,14 @@ For an eligible SCSI-to-NVMe transition the OS disk capability is widened to
 SCSI/NVMe, then size/controller are updated while deallocated. No storage tier,
 data disk, NIC or boot/security generation is changed.
 
+Every completed phase is checked against the original VM security profile and
+disk encryption evidence before a new fingerprint is recorded. Enabled
+encryption at host is retained, not included as a disableable workaround.
+Source and target must advertise support and the subscription feature must be
+Registered. Current/retained ADE settings and ADE extensions remain blocked.
+Existing host encryption support does not enable ADE migration, DES/CMK,
+confidential VM or Trusted Launch recovery.
+
 ## Verification and acceptance
 
 The engine requires healthy provisioning/running state, actual guest OS-disk
@@ -86,6 +94,12 @@ Generate a case-specific guide:
 Expired approvals remain expired during recovery. They are not silently extended.
 Record recovery failures explicitly and use your Azure support/change process
 for unsupported or uncertain paths.
+
+Disk snapshots contain storage contents, not VM host-encryption configuration.
+A recovery VM must explicitly retain `securityProfile.encryptionAtHost=true`,
+use a compatible SKU and the Registered subscription feature. Recovery disks
+must retain their platform-key encryption. Creating a snapshot is not a
+successful restore, and no original-SKU allocation is promised.
 
 ## Guest preparation journals
 

@@ -7,8 +7,8 @@ The test module pins AzureRM **4.48.0**. Installed schema checks confirm:
 
 | Resource | Relevant attributes |
 |---|---|
-| `azurerm_linux_virtual_machine` | `size`, `disk_controller_type` |
-| `azurerm_windows_virtual_machine` | `size`, `disk_controller_type` |
+| `azurerm_linux_virtual_machine` | `size`, `disk_controller_type`, `encryption_at_host_enabled` |
+| `azurerm_windows_virtual_machine` | `size`, `disk_controller_type`, `encryption_at_host_enabled` |
 | `azurerm_network_interface` | `accelerated_networking_enabled` |
 
 The exact pinned provider source implements both VM size and controller updates
@@ -65,6 +65,14 @@ The final normal plan must have no unintended changes or replacements and must
 show the exact target. Supply it with `-TerraformReconciliationPath` and
 post-verification owner acceptance during explicit resume. No plan/apply is
 run by the upgrade engine.
+
+Preserve `encryption_at_host_enabled = true` when the approved VM has host
+encryption. Both desired and reconciliation plans must match the observed
+VM setting; missing, disabled or unknown encryption is rejected even in a
+claimed no-op plan. Host encryption is not ADE or a disk encryption set.
+The pinned provider exposes the property as an optional boolean; no new
+owner/AzAPI patch or lifecycle exclusion is needed. This is not a live no-op
+claim. The live normal plan still must prove exact reconciliation.
 
 Do not use `ignore_changes = all`, permanent size/controller exclusions or
 overlapping AzAPI/AzureRM ownership of the same property. This implementation

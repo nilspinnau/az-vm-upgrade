@@ -19,6 +19,26 @@ function Get-LifecycleFinding {
     }
 }
 
+function Get-SkuCacheCapability {
+    param($Sku, [string]$Name)
+    $direct = Get-SkuCapability $Sku $Name
+    if ($null -ne $direct) { return $direct }
+    if ($Name -in @('CachedDiskReadBytesPerSecond','CachedDiskWriteBytesPerSecond')) {
+        $legacy = Get-SkuCapability $Sku 'CachedDiskBytesPerSecond'
+        if ($null -ne $legacy) { return $legacy }
+    }
+    $temp = Get-SkuCapability $Sku 'MaxResourceVolumeMB'
+    $nvmeTemp = Get-SkuCapability $Sku 'NvmeDiskSizeInMiB'
+    # Combined limits represent cache alone only on a proved no-temp-disk SKU.
+    if ($null -eq $temp -or [double]$temp -ne 0 -or ($nvmeTemp -and [double]$nvmeTemp -gt 0)) { return $null }
+    $combined = @{
+        CachedDiskIOPS = 'CombinedTempDiskAndCachedIOPS'
+        CachedDiskReadBytesPerSecond = 'CombinedTempDiskAndCachedReadBytesPerSecond'
+        CachedDiskWriteBytesPerSecond = 'CombinedTempDiskAndCachedWriteBytesPerSecond'
+    }
+    Get-SkuCapability $Sku $combined[$Name]
+}
+
 function Get-QuotaProjection {
     param([Parameter(Mandatory)]$SourceSku, [Parameter(Mandatory)]$TargetSku, [Parameter(Mandatory)][AllowEmptyCollection()][array]$Usage)
     $sourceCores = Get-SkuCapability $SourceSku 'vCPUs'
@@ -82,7 +102,7 @@ function Test-TargetCompatibility {
             $checks.Add((New-Check 'boot-generation' unsupported 'NVMe needs Generation 2; use a separate rebuild/conversion plan.'))
         } else { $checks.Add((New-Check 'boot-generation' pass "Retain $generation.")) }
     }
-    foreach ($name in @('CpuArchitectureType','MemoryGB','vCPUs','MaxDataDiskCount','MaxNetworkInterfaces','DiskControllerTypes','MaxResourceVolumeMB')) {
+    foreach ($name in @('CpuArchitectureType','MemoryGB','vCPUs','MaxDataDiskCount','MaxNetworkInterfaces','MaxResourceVolumeMB')) {
         if ($null -eq (Get-SkuCapability $TargetSku $name) -or $null -eq (Get-SkuCapability $SourceSku $name)) {
             $checks.Add((New-Check "capability:$name" unknown 'Missing source or target SKU metadata.'))
         }
@@ -104,8 +124,16 @@ function Test-TargetCompatibility {
         if ($null -ne $value -and [int]$value -lt $pair[1]) { $checks.Add((New-Check $pair[0] unsupported 'Target device limit is below the attached device count.')) }
     }
     $controllers = Get-SkuCapability $TargetSku 'DiskControllerTypes'
-    if ($controllers -and $Controller -notin ($controllers -split ',' | ForEach-Object Trim)) {
+    if (-not $controllers) {
+        $checks.Add((New-Check 'controller' unknown 'Target controller capability is missing; no controller is inferred.'))
+    } elseif ($Controller -notin ($controllers -split ',' | ForEach-Object Trim)) {
         $checks.Add((New-Check 'controller' unsupported "Target does not advertise $Controller."))
+    }
+    $current = Get-Field $vm 'storageProfile.diskControllerType'
+    if ($current -notin @('SCSI','NVMe')) {
+        $checks.Add((New-Check 'source-controller' unknown 'Explicit current ARM controller is required; legacy SKU metadata may omit DiskControllerTypes.'))
+    } elseif ($Evidence.guest -and $Evidence.guest.actualController -ne $current) {
+        $checks.Add((New-Check 'source-controller' unknown 'ARM and guest current controller evidence does not agree.'))
     }
     $sourceTemp = Get-SkuCapability $SourceSku 'MaxResourceVolumeMB'
     $targetTemp = Get-SkuCapability $TargetSku 'MaxResourceVolumeMB'
@@ -115,21 +143,36 @@ function Test-TargetCompatibility {
         ($null -ne $targetTemp -and [double]$targetTemp -gt 0) -or ($targetNvmeTemp -and [double]$targetNvmeTemp -gt 0)) {
         $checks.Add((New-Check 'temporary-storage' unsupported 'This release executes only no-temp-disk to no-temp-disk paths; no preview registration or formatting.'))
     }
-    foreach ($metric in @('UncachedDiskIOPS','UncachedDiskBytesPerSecond','CachedDiskIOPS','CachedDiskBytesPerSecond')) {
+    foreach ($metric in @('UncachedDiskIOPS','UncachedDiskBytesPerSecond','CachedDiskIOPS','CachedDiskReadBytesPerSecond','CachedDiskWriteBytesPerSecond')) {
         $before = Get-SkuCapability $SourceSku $metric
         $after = Get-SkuCapability $TargetSku $metric
+        if ($metric -like 'Cached*') {
+            $before = Get-SkuCacheCapability $SourceSku $metric
+            $after = Get-SkuCacheCapability $TargetSku $metric
+        }
         if ($null -eq $before -or $null -eq $after) {
             $checks.Add((New-Check "performance:$metric" unknown 'Performance capability requires reviewed evidence.'))
         } elseif ([double]$after -lt [double]$before) {
             $checks.Add((New-Check "performance:$metric" unsupported 'Target advertised disk performance is lower than source.'))
         }
+
     }
     if ($vm.securityProfile -and (Get-Field $vm 'securityProfile.securityType') -notin @($null,'Standard')) {
         $checks.Add((New-Check 'security-type' unsupported 'Trusted Launch/confidential VMs need a separately validated path; security is never changed implicitly.'))
     }
-    if ((Get-Field $vm 'securityProfile.encryptionAtHost') -eq $true -and
-        (Get-SkuCapability $TargetSku 'EncryptionAtHostSupported') -ne 'True') {
-        $checks.Add((New-Check 'encryption-at-host' unsupported 'Target support is missing.'))
+    $hostEncrypted = (Get-Field $vm 'securityProfile.encryptionAtHost') -eq $true
+    if ($hostEncrypted) {
+        foreach ($item in @(@('source',$SourceSku),@('target',$TargetSku))) {
+            $support = Get-SkuCapability $item[1] 'EncryptionAtHostSupported'
+            $status = if ($null -eq $support) { 'unknown' } elseif ($support -ieq 'True') { 'pass' } else { 'unsupported' }
+            $checks.Add((New-Check "encryption-at-host:$($item[0])" $status 'Encryption at host must remain enabled on a supported size.' 'Compute SKU API'))
+        }
+        $state = Get-Field $Evidence 'hostEncryption.state'
+        $status = if (-not $state) { 'unknown' } elseif ($state -eq 'Registered') { 'pass' } else { 'unsupported' }
+        $checks.Add((New-Check 'encryption-at-host-feature' $status 'Subscription feature must be Registered; the toolkit never registers or disables encryption.' 'ARM feature'))
+    }
+    if (@(Get-Field $vm 'encryptionExtensions' | Where-Object { $null -ne $_ }).Count) {
+        $checks.Add((New-Check 'azure-disk-encryption' unsupported 'ADE extension detected. ADE migration/decryption is outside this workflow.'))
     }
     $zones = @($vm.zones)
     if ($vm.location -notin $TargetSku.locations) { $checks.Add((New-Check 'region' unsupported 'Target not advertised in current region.')) }
@@ -160,7 +203,12 @@ function Test-TargetCompatibility {
         if ($disk.sku.name -in @('UltraSSD_LRS','PremiumV2_LRS') -or $disk.maxShares -gt 1) {
             $checks.Add((New-Check 'disk-layout' unsupported 'Ultra/Premium SSD v2/shared disks require a separately tested path.'))
         }
-        if ($disk.adeEnabled -eq $true) { $checks.Add((New-Check 'azure-disk-encryption' unsupported 'ADE configuration requires manual migration review.')) }
+        if ($disk.adeEnabled -eq $true -or ($hostEncrypted -and (Get-Field $disk 'adeSettingsPresent') -eq $true)) {
+            $checks.Add((New-Check 'azure-disk-encryption' unsupported 'Current or retained ADE settings detected; no decryption or ADE migration is performed.'))
+        }
+        if (Get-Field $disk 'securityProfile') {
+            $checks.Add((New-Check 'disk-security-profile' unsupported 'Confidential disk/security settings require a separate recovery path.'))
+        }
         if ($disk.encryption.type -and $disk.encryption.type -ne 'EncryptionAtRestWithPlatformKey') {
             $checks.Add((New-Check 'customer-managed-encryption' unsupported 'Customer-managed or confidential encryption requires separately tested recovery.'))
         }
@@ -173,6 +221,10 @@ function Get-GuestAdvisory {
     $guest = $Evidence.guest
     if (-not $guest) { return @() }
     $items = [Collections.Generic.List[string]]::new()
+    if (@($Evidence.disks | Where-Object { $_.id -ieq $Evidence.vm.storageProfile.osDisk.managedDisk.id -and $_.hyperVGeneration -eq 'V2' }).Count -eq 1 -and
+        (Get-Field $Evidence.vm 'securityProfile.securityType') -ne 'TrustedLaunch') {
+        $items.Add('Optional separate security assessment: existing Gen2 VMs can be evaluated for Trusted Launch. Verify supported size/OS, Linux SBInfo Secure Boot compatibility, Enhanced Backup policy and applicable ASR constraints. SKU/NVMe migration does not require or authorize this security change; preserve security type, Secure Boot and vTPM. Follow https://learn.microsoft.com/azure/virtual-machines/trusted-launch-existing-vm with separate consent and recovery testing; do not assume reversible enablement.')
+    }
     $windows = "$($guest.osProfile)" -like 'windows:*'
     if (-not $windows -and (Get-Field $guest 'azureVmUtils') -and $guest.azureVmUtils -ne 'pass') {
         $items.Add('azure-vm-utils (azure-nvme-id and /dev/disk/azure links) was not fully detected. Install it from the distribution package channel if your release provides one and use /dev/disk/azure/* paths in application configuration. It supplies stable device identification only; it does not replace NVMe boot-driver staging or stable-mount verification.')
@@ -251,12 +303,21 @@ function New-VmUpgradePlan {
             $checks.Add((New-Check 'nvme-boot' $status 'Stage NVMe driver in boot image and configure documented timeout; reassess afterward.'))
         }
         if ($guest.actualController -eq 'unknown' -or -not $guest.storageIdentityHash) { $checks.Add((New-Check 'guest-storage-identity' unknown 'Actual OS controller and persistent storage identities must be proved.')) }
+        if ($guest.ContainsKey('managedDataMappings') -and
+            (@($guest.managedDataMappings).Count -ne @($vm.storageProfile.dataDisks).Count -or
+             @($guest.managedDataMappings | Where-Object controller -NE $currentController).Count)) {
+            $checks.Add((New-Check 'guest-data-lun-mapping' unknown 'Microsoft Azure udev LUN mapping must cover every attached managed data disk on the actual controller.'))
+        }
         $matrix = Read-UpgradeJson (Join-Path $script:RepositoryRoot 'catalog\support.json')
         $osMatches = @($matrix.labProfiles | Where-Object { $guest.osProfile -cmatch $_.pattern })
         if ($osMatches.Count -ne 1) { $checks.Add((New-Check 'os-support' unsupported "OS profile $($guest.osProfile) is assessment-only in this release.")) }
         if ($guest.agentReady -ne $true) {
             $status = if ($null -eq $guest.agentReady) { 'unknown' } else { 'required' }
             $checks.Add((New-Check 'guest-agent' $status 'VM guest agent readiness has not passed.'))
+        }
+        if ($WorkloadReview.guestNetworkProbeConsent -eq $true -and $guest.azureHttpsConnectivity -ne 'pass') {
+            $status = if ($guest.azureHttpsConnectivity -eq 'failed') { 'failed' } else { 'required' }
+            $checks.Add((New-Check 'azure-https-connectivity' $status 'The approved bounded guest network probe must pass before downtime.'))
         }
     }
     if (@($Evidence.instanceView.statuses | Where-Object code -EQ 'ProvisioningState/succeeded').Count -ne 1 -or
@@ -299,12 +360,16 @@ function New-VmUpgradePlan {
         $iac.managed = $true
         if (-not $TerraformPlan) { $checks.Add((New-Check 'terraform' unknown 'A resource-address mapping requires a Terraform plan JSON.')) }
         else {
-            $iac.check = Test-TerraformUpgradePlan -Plan $TerraformPlan -Mapping $TerraformMapping -VmId $vm.id -TargetSize $TargetSize -Controller $Controller
+            $iac.check = Test-TerraformUpgradePlan -Plan $TerraformPlan -Mapping $TerraformMapping -VmId $vm.id -TargetSize $TargetSize -Controller $Controller `
+                -ExpectedEncryptionAtHost (Get-Field $vm 'securityProfile.encryptionAtHost')
             $iac.check.mapping = $TerraformMapping
             $iac.status = $iac.check.status
             if ($iac.check.status -ne 'pass') { $checks.Add((New-Check 'terraform' unsupported $iac.check.detail)) }
         }
         $iac.suggestions = @("Set $($TerraformMapping.vmAddress).size = $TargetSize", "Set $($TerraformMapping.vmAddress).disk_controller_type = $Controller", 'Preserve NIC properties; no ignore_changes is generated.')
+        if ((Get-Field $vm 'securityProfile.encryptionAtHost') -eq $true) {
+            $iac.suggestions += "Retain $($TerraformMapping.vmAddress).encryption_at_host_enabled = true"
+        }
     }
     $advisories = @(Get-GuestAdvisory $Evidence)
     $classification = if (@($checks | Where-Object { $_.name -eq 'boot-generation' -and $_.status -eq 'unsupported' }).Count) { 'requires-rebuild' }
@@ -337,7 +402,7 @@ function New-VmUpgradePlan {
 function Test-TerraformUpgradePlan {
     param([Parameter(Mandatory)]$Plan, [Parameter(Mandatory)]$Mapping,
         [Parameter(Mandatory)][string]$VmId, [string]$TargetSize, [string]$Controller,
-        [switch]$Reconciliation)
+        [switch]$Reconciliation, [Nullable[bool]]$ExpectedEncryptionAtHost = $null)
     if ($Plan.errored -eq $true -or $Plan.format_version -notmatch '^1\.' -or -not $Mapping.vmAddress) {
         return @{ status = 'failed'; detail = 'Missing mapping, errored plan, or unsupported Terraform plan format.' }
     }
@@ -350,7 +415,10 @@ function Test-TerraformUpgradePlan {
         return @{ status = 'failed'; detail = 'Mapped VM before.id does not match the approved VM.' }
     }
     foreach ($change in $changes) {
-        if (@($change.change.actions | Where-Object { $_ -in @('create','delete') }).Count -or @($change.change.replace_paths).Count) {
+        if (@($change.change.actions).Count -ne 1 -or $change.change.actions[0] -notin @('update','no-op')) {
+            return @{ status = 'failed'; detail = "Missing or unsupported maintenance action at $($change.address)." }
+        }
+        if (@($change.change.replace_paths | Where-Object { $null -ne $_ }).Count) {
             return @{ status = 'failed'; detail = "Replacement/create/delete at $($change.address) is not allowed in a maintenance resize plan." }
         }
         if ($Reconciliation -and @($change.change.actions | Where-Object { $_ -ne 'no-op' }).Count) {
@@ -361,6 +429,14 @@ function Test-TerraformUpgradePlan {
         }
     }
     $after = $mapped[0].change.after
+    if ($null -ne $ExpectedEncryptionAtHost -and
+        (Get-Field $after 'encryption_at_host_enabled') -cne $ExpectedEncryptionAtHost) {
+        return @{ status = 'failed'; detail = 'Desired encryption-at-host setting is missing or differs from the approved VM.' }
+    }
+    $unknown = Get-Field $mapped[0] 'change.after_unknown'
+    if ($unknown -and ($unknown | ConvertTo-Json -Depth 50 -Compress) -match ':true') {
+        return @{ status = 'failed'; detail = 'Unknown post-change values require a reviewed provider plan.' }
+    }
     if ($after.size -cne $TargetSize -or $after.disk_controller_type -cne $Controller) {
         return @{ status = 'failed'; detail = 'Desired target size/controller do not match the approved plan.' }
     }

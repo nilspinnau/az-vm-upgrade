@@ -6,8 +6,8 @@ deployment. No service, database or permanent guest extension is installed by
 the toolkit.
 
 **Release boundary:** assessment can cover standalone Linux/Windows VMs, but
-the execution engine is **disposable-lab-only**. No live Azure path has been
-validated in this repository. A `ready` plan means the collected checks passed,
+the execution engine is **disposable-lab-only**. Exact live lab results are
+recorded in [acceptance](docs/acceptance.md). A `ready` plan means collected checks passed,
 not that the workload is production-certified or capacity is guaranteed.
 There is no production bypass flag. See [support matrix](docs/support-matrix.md).
 
@@ -22,11 +22,17 @@ There is no production bypass flag. See [support matrix](docs/support-matrix.md)
 | Customer outputs | JSON evidence/plan, CSV inventory, Markdown guide and safe launchers for ready **lab** plans only |
 | Execution | Exact plan-bound approval, protection, drift/concurrency gates, minimal PATCHes, Azure operation polling, durable journal, post-start validation |
 | Recovery | Conservative resume and recovery guide; no automatic destructive restore, VM deletion or disk formatting |
+| Guest preparation | Native plan-bound NVMe boot staging, exact Ubuntu azure-vm-utils channel, MANA detection/operator-supplied Windows artifact, separate reboot and rollback consent |
 | Terraform | One private test VM, managed data disk, Linux/Windows/SUSE assessment profiles, exact mapping/replacement/no-op reconciliation checks |
 
 The executor changes only VM size/controller and, when necessary, the OS disk's
 supported controller capability. It does not silently change zone, region,
 architecture, generation, security, image, disk tier or NIC configuration.
+Existing encryption at host is preserved on compatible bounded profiles;
+ADE/CMK/complex security layouts remain explicit exclusions. Optional Trusted
+Launch assessment is separate, never a hidden part of a SKU migration.
+Disposable integration harnesses can initialize an exact new lab data disk and
+exercise sequential snapshot restoration only under their own explicit scope.
 
 ## Start with assessment
 

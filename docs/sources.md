@@ -3,6 +3,39 @@
 Reviewed 2026-10-09. These are factual references; no third-party conversion
 utility, customer material or SAP project implementation is bundled.
 
+The public [Trusted Launch FAQ](https://learn.microsoft.com/en-us/azure/virtual-machines/trusted-launch-faq#can-i-disable-trusted-launch-for-a-new-vm-deployment)
+documents explicit Standard security with Compute API `2025-11-01` or newer.
+The restoration harness requires that API rather than using older CLI create
+templates that require an additional subscription feature. No security
+conversion or extra feature registration is performed.
+
+Encryption-at-host and SKU capability additions reviewed 2026-10-11:
+
+- https://learn.microsoft.com/en-us/azure/virtual-machines/linux/disks-enable-host-based-encryption-cli
+  documents Registered feature, `EncryptionAtHostSupported`, resize validation
+  and the current/ever-ADE exclusion. The toolkit retains encryption, never
+  registers or disables it automatically.
+- https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption-overview
+  distinguishes SSE/platform keys, DES/CMK, host encryption and ADE. The
+  published ADE retirement date is September 15, 2028; ADE migration remains
+  out of scope, not silently ignored.
+- Dsv5/Dsv6 primary size pages document no local storage, cache support and
+  uncached limits:
+  https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dsv5-series
+  and https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dsv6-series.
+  Read-only live SKU discovery exposes `CombinedTempDiskAndCached*` rather
+  than synthetic `CachedDisk*` fields. Combined limits are used as cache
+  limits only when no temp disk is proved; read/write throughput is checked
+  separately. Legacy source SKU controller omission is not interpreted as
+  missing current ARM/guest controller evidence; target support stays required.
+- The public Azure Retail Prices API is used only for scoped lab estimates,
+  not retirement cost-impact reporting. Meter currency/unit/OS/Spot distinction
+  matters; delayed Cost Management totals are not a spending cap.
+- https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dasv6-series
+  verifies AMD EPYC, no local storage, Gen2/NVMe image requirements and the
+  `Dav6`/`Dasv6` naming difference. Exact regional SKU capabilities/restrictions,
+  quota and actual allocation remain authoritative for the chosen lab.
+
 | Subject | Source and constraint |
 |---|---|
 | Resize | https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/resize-vm |
@@ -59,3 +92,35 @@ must still be reviewed for any future third-party additions and customer data.
   upstream code is vendored and the full conversion script is never nested.
 - The Windows MANA driver link is a mutable redirect, so only an
   operator-supplied, hash- and signature-verified package is accepted.
+
+## Live integration fixes and identity authority (2026-10-11)
+
+- https://learn.microsoft.com/en-us/azure/virtual-machines/linux/add-disk
+  maps ARM/IMDS LUN to SCSI HCTL and Azure stable symlinks. Guest SCSI
+  NAA serial is not ARM managed-disk `uniqueId`. The lab initializer uses
+  exact IMDS disk ID/unique LUN, Microsoft-provided Azure udev properties,
+  HCTL and the captured serial; no size/order inference or cloud-init formatting.
+- The MIT `azure-vm-utils` pinned upstream
+  [80-azure-disk.rules](https://github.com/Azure/azure-vm-utils/blob/7989a36fcf233e4c4bd5fbc20964f3f038b08060/udev/80-azure-disk.rules)
+  exposes `AZURE_DISK_TYPE`, `AZURE_DISK_LUN` and
+  `/dev/disk/azure/data/by-lun/*` for both SCSI and remote NVMe, using
+  `azure-nvme-id --udev` for NVMe. The toolkit consumes these interfaces;
+  it does not reimplement the upstream mapping algorithm. Preserve filesystem
+  UUID mounts across controllers; controller serials are observations, not
+  a promised cross-controller managed-resource identifier.
+- https://learn.microsoft.com/en-us/azure/virtual-machines/trusted-launch-existing-vm
+  documents a separate existing-Gen2 security upgrade, Linux `SBInfo`
+  compatibility checks and Enhanced Backup policy. Review ASR-specific
+  documentation; do not generalize the page's Gen1 ASR wording to every
+  Gen2 workload. Public rollback guidance includes tool/API prerequisites
+  and a one-way re-enablement restriction. This toolkit only adds an optional
+  assessment advisory and never enables/disables Trusted Launch. Azure Migrate
+  importing Gen2 servers is a different workflow from this existing-Azure-VM lab.
+## Live device-mapping correction
+
+The probe consumes azure-vm-utils' `data/by-lun` links and Azure disk/LUN
+properties, rather than duplicating NVMe namespace mapping. NVMe udev does
+not necessarily provide `ID_BUS`; the resolved block device's kernel sysfs
+subsystem establishes the controller independently. SCSI additionally requires
+its udev bus property. The lab observed this difference with unchanged LUN,
+filesystem UUID, mount and checksum after conversion.

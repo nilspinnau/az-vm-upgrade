@@ -21,7 +21,7 @@ foreach ($flag in @('labOnly', 'guestConsent', 'restartApproved', 'exclusiveWind
 if ([DateTimeOffset]::Parse($context.expiresAt) -le [DateTimeOffset]::UtcNow) { throw 'Live test context expired.' }
 if (-not $context.testResourceGroup -or -not $context.dataSentinelNote) { throw 'Exact test group and a data-sentinel procedure are required.' }
 if (Test-Path -LiteralPath $OutputPath) { throw 'Preserve the existing result; select a new output path.' }
-$identity = Get-VmIdentity $preparation.vmId
+$identity = & (Get-Module AzVmUpgrade) { param($id) Get-VmIdentity $id } $preparation.vmId
 if ($identity.resourceGroup -ine $context.testResourceGroup) { throw 'VM is outside the approved test resource group.' }
 
 $result = [ordered]@{ schemaVersion = 'live-preparation-acceptance/1.0'; preparationHash = $preparation.hash; steps = @(); status = 'in-progress' }
@@ -36,15 +36,33 @@ try {
     $outcome = Test-PreparationOutcome -Preparation $preparation -Manifest $manifest -PostEvidence $post
     & $step 'reassessment' $outcome.status (($outcome.checks | Where-Object status -EQ 'failed' | ForEach-Object name) -join ',')
     if ($outcome.status -ne 'accepted') { throw 'Post-preparation reassessment rejected.' }
+    if (-not $preparation.preState.sentinelHash -or $post.guest.sentinelHash -cne $preparation.preState.sentinelHash -or
+        $post.guest.applicationHealth -ne 'pass') { throw 'Live lab requires a preserved baseline data checksum and healthy application sentinel.' }
+    & $step 'managed-data-and-health' 'pass' 'fresh guest probe matches the plan-bound checksum and health sentinel'
     if ($TerraformNoOpEvidencePath) {
         if (-not (Test-Path -LiteralPath $TerraformNoOpEvidencePath)) { throw 'Terraform no-op evidence file is missing.' }
         $tf = Read-UpgradeJson $TerraformNoOpEvidencePath
-        if ($tf.status -ne 'no-op' -or $tf.vmId -ine $preparation.vmId) { throw 'Terraform evidence is not an exact no-op for this VM.' }
-        & $step 'terraform-no-op' 'pass' 'operator-supplied plan evidence'
+        if (-not $context.terraformVmAddress) { throw 'Supply the exact Terraform VM address; a status-only attestation is not plan evidence.' }
+        $check = Test-TerraformUpgradePlan -Plan $tf -Mapping @{ vmAddress = $context.terraformVmAddress } -VmId $preparation.vmId `
+            -TargetSize $post.vm.hardwareProfile.vmSize -Controller $post.vm.storageProfile.diskControllerType -Reconciliation `
+            -ExpectedEncryptionAtHost $post.vm.securityProfile.encryptionAtHost
+        if ($check.status -ne 'pass') { throw $check.detail }
+        & $step 'terraform-no-op' 'pass' "normal Terraform plan JSON verified; SHA256=$(Get-UpgradeHash $tf)"
     } else { & $step 'terraform-no-op' 'skipped' 'no evidence supplied' }
     if ($context.rollbackApproved -eq $true) {
         $rb = Invoke-GuestPreparation -Preparation $preparation -Action rollback -GuestConsent -RollbackAcknowledged -JournalDirectory $JournalDirectory -Confirm:$false
-        & $step 'rollback' 'pass' "changes=$(@($rb.changes).Count); restoration still needs reboot and fresh evidence"
+        & $step 'rollback-command' 'pass' "changes=$(@($rb.changes).Count); this alone does not prove restoration"
+        Restart-VmForPreparation -Preparation $preparation -RebootConsent -JournalDirectory $JournalDirectory -Confirm:$false | Out-Null
+        $restored = Get-VmEvidence -VmId $preparation.vmId -GuestConsent
+        $modelHash = & (Get-Module AzVmUpgrade) { param($evidence) Get-PreparationModelHash $evidence } $restored
+        if ($modelHash -cne $preparation.expectedModelHash) { throw 'Azure configuration or encryption changed during rollback reboot.' }
+        if (-not $restored.guest.bootId -or $restored.guest.bootId -ceq $post.guest.bootId -or
+            $restored.guest.pendingReboot -ne $false -or $restored.guest.agentReady -ne $true -or
+            $restored.guest.persistentMounts -ne $true -or $restored.guest.storageIdentityHash -cne $preparation.expectedStorageIdentityHash -or
+            $restored.guest.sentinelHash -cne $preparation.preState.sentinelHash -or $restored.guest.applicationHealth -ne 'pass') {
+            throw 'Rollback reboot/data/mount/health evidence did not pass; preservation is not proven.'
+        }
+        & $step 'rollback-reboot-and-preservation' 'pass' 'fresh boot ID, agent, mounts, data checksum and application sentinel; not VM-level restoration or exact driver-store restoration'
     } else { & $step 'rollback' 'skipped' 'rollbackApproved not set' }
     $result.status = 'completed'
 } catch {
