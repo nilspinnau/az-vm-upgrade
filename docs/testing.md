@@ -80,6 +80,22 @@ same-interface acceptance sequence.
 
 ## Deploy only after approvals
 
+Paid testing remains separately gated. Native running resize has offline
+coverage only: a future live plan must declare its restart/downtime method,
+not reuse a previously approved cold cycle. Full-cycle wrappers that explicitly
+exercise deallocate/start, preparation rollback and sequential recovery must
+request `-ResizeMode Deallocate` when building their plan and bind approval
+`executionMode` to that exact plan. Their preparation tests are not a native
+resize prerequisite. Do not replay a retained wrapper whose execution mode
+or approval no longer matches; the existing supervisor/host/cleanup gates
+still apply.
+
+The offline whole-wrapper fixture substitutes only the recognized literal
+absolute/latest-start date inputs in its in-memory, fully mocked copy.
+Deadline/reserve checks still execute. It refuses unknown date-input shapes;
+the retained historical wrapper and its expired live approval are not changed
+or renewed. Synthetic dates are test data, not authorization to replay it.
+
 `infra/test-vm` creates one VM in a new `azvm-upgrade-lab-*` resource group:
 
 - One Linux, Windows or assessment-only SUSE/SAP-oriented image profile.

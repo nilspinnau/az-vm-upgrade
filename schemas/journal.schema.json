@@ -5,6 +5,7 @@
   "properties": {
     "schemaVersion": {"const": "journal/1.0"},
     "vmId": {"type": "string"},
+    "executionMode": {"enum": ["running-size-update", "deallocate-size-update-start", "deallocate-size-controller-update-start", null]},
     "planHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "phase": {"enum": ["assessed", "planned", "approved", "prepared", "protected", "deallocated", "updated", "started", "verified", "reconciled"]},
     "pendingOperation": {"type": ["object", "null"]},

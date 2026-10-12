@@ -259,7 +259,7 @@ function Get-ResizePlacementAssessment {
     }
     if ($TargetSize -cin @($options.sizes)) {
         $result.status = if ($running) { 'listed-on-current-cluster' } else { 'listed-while-deallocated' }
-        $result.detail='Exact target is in the observed per-VM resize list, not a capacity guarantee. A native running resize still restarts. This executor deliberately uses approved deallocation/start; it does not silently switch to an in-place restart path.'
+        $result.detail='Exact target is in the observed per-VM resize list, not a capacity guarantee. A native running resize still restarts; execution must use the exact planned and approved mode.'
     } elseif ($running) {
         $result.status='requires-deallocation'
         $result.detail='Exact target is absent from the current-cluster resize list. Deallocation may expose additional sizes but releases the current allocation. Recheck the exact target after deallocation; no alternate size/zone/region is selected.'
@@ -344,7 +344,8 @@ function New-VmUpgradePlan {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Evidence, [string]$TargetSize,
         [ValidateSet('SCSI','NVMe')][string]$Controller, [hashtable]$WorkloadReview,
-        [hashtable]$TerraformMapping, [hashtable]$TerraformPlan)
+        [hashtable]$TerraformMapping, [hashtable]$TerraformPlan,
+        [ValidateSet('PreferRunning','Deallocate')][string]$ResizeMode = 'PreferRunning')
     Test-UpgradeDocument $Evidence evidence | Out-Null
     if ($Evidence.guest) { Test-UpgradeDocument $Evidence.guest guest | Out-Null }
     if ($WorkloadReview.healthChecks) { Assert-ApplicationHealthChecks @($WorkloadReview.healthChecks) }
@@ -488,7 +489,11 @@ function New-VmUpgradePlan {
         $resize.status='controller-conversion-required'
         $resize.execution='deallocate-size-controller-update-start'
         $resize.detail='A controller change is not native size-only resize. Use the separately gated conversion procedure and guest boot preparation; native resize-list membership is not conversion authorization.'
+    } elseif ($ResizeMode -eq 'PreferRunning' -and $resize.status -eq 'listed-on-current-cluster') {
+        $resize.execution='running-size-update'
+        $resize.detail+=' Preferred native running size-only update; restart downtime is required. No deallocate/start or automatic cold fallback.'
     }
+    $resize.requestedMode = $ResizeMode
     if ($TargetSize -and $currentController -eq $Controller -and $resize.status -in @('unknown','not-listed-while-deallocated')) {
         $checks.Add((New-Check 'resize-placement' unknown $resize.detail 'Compute VM sizes API'))
     }
@@ -511,7 +516,9 @@ function New-VmUpgradePlan {
         resize = $resize
         workloadReview = $WorkloadReview; fingerprint = $Evidence.fingerprint
         evidence = $Evidence; hash = $null
-        disruption = 'Single VM deallocate/update/start; downtime and loss of temporary storage. Original allocation cannot be guaranteed.'
+        disruption = if ($resize.execution -eq 'running-size-update') {
+            'Native running size-only resize restarts the selected VM: downtime and temporary-data loss remain possible. No deallocation/start or automatic cold fallback; allocation is not guaranteed.'
+        } else { 'Single VM deallocate/update/start; downtime and loss of temporary storage. Original allocation cannot be guaranteed.' }
     }
     $unsigned = @{} + $plan
     $unsigned.Remove('hash')

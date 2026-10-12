@@ -10,6 +10,8 @@
   "testResourceGroup": "azvm-upgrade-lab-example",
   "labOnly": false,
   "downtime": false,
+  "executionMode": "deallocate-size-controller-update-start",
+  "restartDowntime": false,
   "temporaryDataLoss": false,
   "guestCommands": false,
   "exclusiveWindow": false,

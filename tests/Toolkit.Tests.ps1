@@ -450,6 +450,7 @@ InModuleScope AzVmUpgrade {
             Write-UpgradeJson $script:plan $script:planPath
             Write-UpgradeJson $script:approval $script:approvalPath
             $script:requireRealOwnerAcceptance = $false
+            $script:runtimeUpdateOnResize = $false
             Mock Assert-OwnerAcceptance {
                 param($Plan,$Journal,$Path)
                 if ($script:requireRealOwnerAcceptance) { return & $script:realOwnerAcceptance $Plan $Journal $Path }
@@ -476,6 +477,9 @@ InModuleScope AzVmUpgrade {
                 if ($Id -match '/disks/') { $script:simulation.disks[0].supportedCapabilities.diskControllerTypes = 'SCSI, NVMe' }
                 else {
                     $script:simulation.vm.hardwareProfile.vmSize = $Body.properties.hardwareProfile.vmSize
+                    if ($script:runtimeUpdateOnResize) {
+                        $script:simulation.guest.runtimeSizeEvidence.vmSize = $Body.properties.hardwareProfile.vmSize
+                    }
                     if ($Body.properties.ContainsKey('storageProfile')) {
                         $script:simulation.vm.storageProfile.diskControllerType = $Body.properties.storageProfile.diskControllerType
                         $script:simulation.guest.actualController = $Body.properties.storageProfile.diskControllerType
@@ -503,12 +507,8 @@ InModuleScope AzVmUpgrade {
             Should -Invoke Invoke-MinimalArmPatch -Times 2 -Exactly
         }
         It 'executes the same-interface state machine without OS capability update' {
-            $script:plan.targetController = 'SCSI'
-            $script:plan.sourceController = 'SCSI'
-            $script:approval.targetController = 'SCSI'
-            $unsigned = @{} + $script:plan; $unsigned.Remove('hash')
-            $script:plan.hash = Get-UpgradeHash $unsigned
-            $script:approval.planHash = $script:plan.hash
+            $script:plan = New-VmUpgradePlan $script:simulation -TargetSize Standard_D2s_v6 -Controller SCSI -WorkloadReview (New-FixtureReview) -ResizeMode Deallocate
+            $script:approval = New-FixtureApproval $script:plan
             Write-UpgradeJson $script:plan $script:planPath
             Write-UpgradeJson $script:approval $script:approvalPath
             $journal = Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false
@@ -616,7 +616,7 @@ InModuleScope AzVmUpgrade {
             ($script:simulation.skus[1].capabilities | Where-Object name -EQ 'DiskControllerTypes').value = 'SCSI'
             $script:simulation.guest.nvmeDriver = 'unknown'
             $script:simulation.guest.nvmeBoot = 'unknown'
-            $script:plan = New-VmUpgradePlan $script:simulation -TargetSize Standard_D2s_v6 -Controller SCSI -WorkloadReview (New-FixtureReview)
+            $script:plan = New-VmUpgradePlan $script:simulation -TargetSize Standard_D2s_v6 -Controller SCSI -WorkloadReview (New-FixtureReview) -ResizeMode Deallocate
             $script:approval = New-FixtureApproval $script:plan
             Write-UpgradeJson $script:plan $script:planPath
             Write-UpgradeJson $script:approval $script:approvalPath
@@ -696,6 +696,148 @@ InModuleScope AzVmUpgrade {
         It 'never formats disks or auto-restores a VM in the execution engine' {
             $source = Get-Content (Join-Path $script:RepositoryRoot 'src\Execution.ps1') -Raw
             $source | Should -Not -Match 'Format-Volume|Initialize-Disk|mkfs|wipefs|Remove-AzVM|az vm delete'
+        }
+        Describe 'Preferred running native resize' {
+            BeforeEach {
+                $script:plan = New-VmUpgradePlan $script:simulation -TargetSize Standard_D2s_v6 -Controller SCSI -WorkloadReview (New-FixtureReview)
+                $script:approval = New-FixtureApproval $script:plan
+                $script:runtimeUpdateOnResize = $true
+                Write-UpgradeJson $script:plan $script:planPath
+                Write-UpgradeJson $script:approval $script:approvalPath
+            }
+            It 'resizes with exactly one size-only PATCH and zero deallocate/start/disk/controller operations' {
+                $script:plan.resize.execution | Should -Be 'running-size-update'
+                $script:plan.disruption | Should -Match 'restarts'
+                $j=Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false
+                $j.phase | Should -Be 'reconciled'
+                $j.executionMode | Should -Be 'running-size-update'
+                $j.events.phase | Should -Contain 'running-size-update'
+                $j.events.phase | Should -Not -Contain 'deallocated'
+                $j.events.phase | Should -Not -Contain 'updated'
+                $j.pendingOperation | Should -BeNullOrEmpty
+                Should -Invoke Invoke-MinimalArmPatch -Times 1 -Exactly -ParameterFilter {
+                    $Id -ceq $script:plan.vmId -and $Body.properties.Keys.Count -eq 1 -and
+                    $Body.properties.hardwareProfile.vmSize -ceq $script:plan.targetSize
+                }
+                Should -Invoke Invoke-ArmPowerAction -Times 0 -Exactly
+                Should -Invoke Invoke-MinimalArmPatch -Times 0 -Exactly -ParameterFilter {$Id -match '/disks/' -or $Body.properties.ContainsKey('storageProfile')}
+                (Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false).phase | Should -Be 'reconciled'
+                Should -Invoke Invoke-MinimalArmPatch -Times 1 -Exactly
+            }
+            It 'requires explicit native execution mode and restart downtime consent' {
+                $script:approval.Remove('executionMode')
+                {Assert-UpgradeApproval $script:plan $script:approval} | Should -Throw '*executionMode*'
+                $script:approval.executionMode='running-size-update';$script:approval.restartDowntime=$false
+                {Assert-UpgradeApproval $script:plan $script:approval} | Should -Throw '*restartDowntime*'
+                Should -Invoke Invoke-MinimalArmPatch -Times 0 -Exactly
+                Should -Invoke Invoke-ArmPowerAction -Times 0 -Exactly
+            }
+            It 'refuses lost eligibility before mutation without automatic cold fallback: <Case>' -ForEach @(
+                @{Case='target-absent'},@{Case='options-unknown'},@{Case='stopped'}
+            ) {
+                switch($Case) {
+                    target-absent {$script:simulation.resizeOptions.sizes=@('Standard_D2s_v5')}
+                    options-unknown {$script:simulation.resizeOptions.status='failed'}
+                    stopped {$script:simulation.instanceView.statuses[1].code='PowerState/stopped'}
+                }
+                {Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false} | Should -Throw
+                Should -Invoke Invoke-MinimalArmPatch -Times 0 -Exactly
+                Should -Invoke Invoke-ArmPowerAction -Times 0 -Exactly
+            }
+            It 'retains uncertain native failure and refuses replay or cold fallback' {
+                Mock Invoke-MinimalArmPatch { throw 'AllocationFailed native resize' }
+                {Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false} | Should -Throw '*AllocationFailed*'
+                $j=Read-UpgradeJson (Get-ChildItem $script:journalDir -Filter *.journal.json).FullName
+                $j.phase | Should -Be 'protected'
+                $j.pendingOperation.name | Should -Be 'running-size-update'
+                {Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Resume -Confirm:$false} | Should -Throw '*uncertain*'
+                Should -Invoke Invoke-MinimalArmPatch -Times 1 -Exactly
+                Should -Invoke Invoke-ArmPowerAction -Times 0 -Exactly
+            }
+            It 'does not replay a native PATCH when the following evidence read fails' {
+                Mock Get-VmEvidence {
+                    if($script:simulation.vm.hardwareProfile.vmSize -eq $script:plan.targetSize){throw 'Synthetic post-native read failure'}
+                    $copy=$script:simulation | ConvertTo-Json -Depth 100 | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String
+                    $copy.fingerprint=Get-ConfigurationFingerprint $copy
+                    return $copy
+                }
+                {Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false} | Should -Throw '*post-native*'
+                $j=Read-UpgradeJson (Get-ChildItem $script:journalDir -Filter *.journal.json).FullName
+                $j.phase | Should -Be 'protected'
+                $j.pendingOperation.name | Should -Be 'running-size-update'
+                {Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Resume -Confirm:$false} | Should -Throw '*uncertain*'
+                Should -Invoke Invoke-MinimalArmPatch -Times 1 -Exactly
+                Should -Invoke Invoke-ArmPowerAction -Times 0 -Exactly
+            }
+            It 'refuses approval of a different mutation path' {
+                $script:approval.executionMode='deallocate-size-update-start'
+                {Assert-UpgradeApproval $script:plan $script:approval} | Should -Throw '*executionMode*'
+                Should -Invoke Invoke-MinimalArmPatch -Times 0 -Exactly
+            }
+            It 'refuses to resume a native journal relabeled as a cold run' {
+                $j=Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false
+                $path=(Get-ChildItem $script:journalDir -Filter *.journal.json).FullName
+                $j.executionMode='deallocate-size-update-start'
+                Write-UpgradeJson $j $path
+                {Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Resume -Confirm:$false} | Should -Throw '*journal execution mode*'
+                Should -Invoke Invoke-MinimalArmPatch -Times 1 -Exactly
+                Should -Invoke Invoke-ArmPowerAction -Times 0 -Exactly
+            }
+            It 'retains old runtime after native update without verification or fallback' {
+                $script:runtimeUpdateOnResize=$false
+                {Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false} | Should -Throw '*runtime size/CPU*'
+                $j=Read-UpgradeJson (Get-ChildItem $script:journalDir -Filter *.journal.json).FullName
+                $j.phase | Should -Be 'started'
+                $j.validationEvidence.guest.runtimeSizeEvidence.vmSize | Should -Be $script:plan.sourceSize
+                $j.events.phase | Should -Not -Contain 'verified'
+                Should -Invoke Invoke-ArmPowerAction -Times 0 -Exactly
+            }
+            It 'resumes protection after a pre-mutation read failure without power operations' {
+                $script:readCalls=0
+                Mock Get-VmEvidence {
+                    $script:readCalls++
+                    if($script:readCalls -eq 3){throw 'Synthetic pre-resize read failure'}
+                    $copy=$script:simulation | ConvertTo-Json -Depth 100 | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String
+                    $copy.fingerprint=Get-ConfigurationFingerprint $copy
+                    return $copy
+                }
+                {Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false} | Should -Throw '*pre-resize*'
+                (Read-UpgradeJson (Get-ChildItem $script:journalDir -Filter *.journal.json).FullName).phase | Should -Be 'protected'
+                (Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Resume -Confirm:$false).phase | Should -Be 'reconciled'
+                Should -Invoke Invoke-MinimalArmPatch -Times 1 -Exactly
+                Should -Invoke Invoke-ArmPowerAction -Times 0 -Exactly
+            }
+            It 'resumes verified native resize after owner acceptance without repeating the update' {
+                $script:requireRealOwnerAcceptance=$true
+                {Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false} | Should -Throw '*not complete*'
+                $j=Read-UpgradeJson (Get-ChildItem $script:journalDir -Filter *.journal.json).FullName
+                $j.phase | Should -Be 'verified'
+                $owner=Join-Path $TestDrive 'native-owner.json'
+                Write-UpgradeJson @{schemaVersion='acceptance/1.0';planHash=$script:plan.hash;vmId=$script:plan.vmId
+                    validationFingerprint=$j.expectedFingerprint;accepted=$true;acceptedAt=[DateTimeOffset]::UtcNow.ToString('o');reference='Synthetic native acceptance'} $owner
+                (Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Resume -OwnerAcceptancePath $owner -Confirm:$false).phase | Should -Be 'reconciled'
+                Should -Invoke Invoke-MinimalArmPatch -Times 1 -Exactly
+                Should -Invoke Invoke-ArmPowerAction -Times 0 -Exactly
+            }
+            It 'requires a normal Terraform no-op on resume without repeating native resize' {
+                $script:plan.terraform=@{managed=$true;check=@{mapping=@{vmAddress='azurerm_linux_virtual_machine.test'}}}
+                $unsigned=@{}+$script:plan;$unsigned.Remove('hash');$script:plan.hash=Get-UpgradeHash $unsigned
+                $script:approval=New-FixtureApproval $script:plan
+                Write-UpgradeJson $script:plan $script:planPath
+                Write-UpgradeJson $script:approval $script:approvalPath
+                {Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false} | Should -Throw '*Terraform*'
+                $j=Read-UpgradeJson (Get-ChildItem $script:journalDir -Filter *.journal.json).FullName
+                $j.phase | Should -Be 'verified'
+                $desired=@{id=$script:plan.vmId;size=$script:plan.targetSize;disk_controller_type='SCSI'}
+                $tf=@{format_version='1.2';resource_changes=@(@{
+                    address='azurerm_linux_virtual_machine.test';type='azurerm_linux_virtual_machine'
+                    change=@{actions=@('no-op');before=$desired;after=$desired;after_unknown=@{}}
+                })}
+                $path=Join-Path $TestDrive 'native-noop.json';Write-UpgradeJson $tf $path
+                (Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Resume -TerraformReconciliationPath $path -Confirm:$false).phase | Should -Be 'reconciled'
+                Should -Invoke Invoke-MinimalArmPatch -Times 1 -Exactly
+                Should -Invoke Invoke-ArmPowerAction -Times 0 -Exactly
+            }
         }
         It 'WhatIf performs no cloud calls' {
             Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -WhatIf | Out-Null

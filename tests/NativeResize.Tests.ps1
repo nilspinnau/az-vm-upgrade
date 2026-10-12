@@ -49,6 +49,23 @@ InModuleScope AzVmUpgrade {
             $p.resize.execution | Should -Be 'deallocate-size-controller-update-start'
             $p.resize.detail | Should -Match 'not conversion authorization'
         }
+        It 'prefers running resize but allows explicitly planning cold deallocation' {
+            $e=New-FixtureEvidence
+            $native=New-VmUpgradePlan $e -TargetSize Standard_D2s_v6 -Controller SCSI -WorkloadReview (New-FixtureReview)
+            $cold=New-VmUpgradePlan $e -TargetSize Standard_D2s_v6 -Controller SCSI -WorkloadReview (New-FixtureReview) -ResizeMode Deallocate
+            $native.resize.execution | Should -Be 'running-size-update'
+            $cold.resize.execution | Should -Be 'deallocate-size-update-start'
+            $native.hash | Should -Not -Be $cold.hash
+            $native.disruption | Should -Match 'restart'
+            $cold.disruption | Should -Match 'deallocate'
+        }
+        It 'plans relocation explicitly when the target is absent from the running cluster' {
+            $e=New-FixtureEvidence;$e.resizeOptions.sizes=@('Standard_D2s_v5')
+            $p=New-VmUpgradePlan $e -TargetSize Standard_D2s_v6 -Controller SCSI -WorkloadReview (New-FixtureReview)
+            $p.resize.execution | Should -Be 'deallocate-size-update-start'
+            $p.resize.status | Should -Be 'requires-deallocation'
+            $p.disruption | Should -Match 'Original allocation cannot be guaranteed'
+        }
         It 'does not make an absent Windows NVMe service fatal to the SCSI probe' {
             $tokens=$null;$errors=$null
             $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $script:RepositoryRoot 'guest\windows-probe.ps1'),[ref]$tokens,[ref]$errors)

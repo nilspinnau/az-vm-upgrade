@@ -25,7 +25,8 @@
       "properties": {
         "status": {"enum": ["unknown", "listed-on-current-cluster", "listed-while-deallocated", "requires-deallocation", "not-listed-while-deallocated", "controller-conversion-required"]},
         "detail": {"type": "string"},
-        "execution": {"enum": ["deallocate-size-update-start", "deallocate-size-controller-update-start"]}
+        "execution": {"enum": ["running-size-update", "deallocate-size-update-start", "deallocate-size-controller-update-start"]},
+        "requestedMode": {"enum": ["PreferRunning", "Deallocate"]}
       }
     },
     "capacityReservation": {

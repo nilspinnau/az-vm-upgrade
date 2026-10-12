@@ -10,7 +10,7 @@ AzureRM is pinned to 4.48.0; the provider lock file is committed.
 |---|---|
 | PowerShell parsing | All module, customer, guest, fixture and integration scripts passed |
 | Configured static analysis | Module, customer, guest and integration scripts passed |
-| Decision/orchestration tests | 257 Pester tests passed; no failures, skips or unrun tests. Includes wall-clock command bounds, real stalled-child termination and mocked supervisor cleanup, preparation expiry/fresh-power refusal, explicit ARM lab identity success/refusal and legacy IMDS preservation, atomic create/replace, transient/persistent reader locks, read-only failures, unchanged journal phase/intent on publication failure, encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
+| Decision/orchestration tests | 272 Pester tests passed; no failures, skips or unrun tests. Includes wall-clock command bounds, real stalled-child termination and mocked supervisor cleanup, preparation expiry/fresh-power refusal, explicit ARM lab identity success/refusal and legacy IMDS preservation, atomic create/replace, transient/persistent reader locks, read-only failures, unchanged journal phase/intent on publication failure, encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
 | Guest script syntax | Bash syntax and embedded Python AST parsing passed; no guest script executed |
 | Terraform format/validate | Passed |
 | Installed provider schema | Linux/Windows size/controller/host-encryption and NIC acceleration attributes verified |
@@ -574,8 +574,9 @@ distinct from regional SKU advertising. Plans/reports distinguish current-
 cluster listing, requires-deallocation, deallocated listing and unknown/
 absent outcomes. Native cold execution refreshes the exact target list after
 deallocation; unknown/absent targets refuse the size update without substitution.
-This executor does not add a new running-resize mutation mode: its explicit
-deallocation/start consent remains necessary.
+At this historical validation step the executor retained cold-only policy.
+The preferred running path added below supersedes that software policy, not
+the outstanding live-acceptance boundary.
 
 Guest probes retain IMDS compute size, logical processor count and explicit
 metadata failures. Post-upgrade verification requires these observations to
@@ -597,3 +598,34 @@ The actual Linux IMDS-size probe fragment also executes with synthetic text
 responses: valid, empty, malformed and overlong observations retain raw bounded
 content before refusal, with proxy bypass and five-second timeout assertions.
 Stopped, missing and contradictory power states are not mislabeled deallocated.
+
+### Preferred native running resize (offline only)
+
+Compatible same-interface standalone plans now prefer `running-size-update`
+with fresh running/current-cluster exact-target evidence. Explicit `Deallocate`
+planning and absent-cluster relocation remain cold paths. The plan hash,
+report/disruption, approval `executionMode` and native `restartDowntime` consent
+bind the chosen method; loss of native eligibility refuses before mutation,
+with no automatic deallocation/start or target substitution.
+
+The actual execution engine follows approved/protected to intent-recorded
+native size-only PATCH and successful running observation, then the existing
+guest runtime/data/network/health verification, owner acceptance and Terraform
+no-op phases. No new framework, running-resize CLI shell or portal automation
+was added. Native failures retain `protected` and pending operation; old-runtime
+observations retain `started` without `verified`. Uncertain native mutations
+are never replayed on resume or converted to cold recovery.
+
+**272 standard Pester tests and six Terraform mocks pass.** Native-specific
+cases prove one size-only VM PATCH with zero deallocate/start/controller/disk
+mutations, completed-run idempotency, lost/missing/stopped eligibility refusal,
+exact mode/restart consent, failed mutation and post-mutation read failure
+with uncertain-resume refusal, old runtime/no verification, pre-mutation
+protection resume, post-verification owner resume and normal Terraform no-op
+resume without a second resize. Explicit cold and conversion tests remain
+covered. No live native-running test, guest invocation, Azure resource change
+or spend occurred. Paid testing remains suspended; no production/owner
+acceptance is inferred from offline mocks.
+The journal records execution mode; a native journal relabeled as cold refuses
+resume even after completion. The 11 reviewed top-level wrapper/supervised mocks
+also pass using synthetic recognized date inputs, not renewed live approval.

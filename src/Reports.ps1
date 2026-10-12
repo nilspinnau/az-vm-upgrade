@@ -90,7 +90,7 @@ function Export-VmUpgradeReport {
         $lines.Add('')
         $lines.Add('## Native resize placement')
         $lines.Add("Status: $($Plan.resize.status). $(ConvertTo-MarkdownCell $Plan.resize.detail)")
-        $lines.Add("Executor policy: $($Plan.resize.execution). Compatible SCSI-to-SCSI uses a size-only VM update: no NVMe conversion, boot staging, driver installation or disk capability PATCH. Guest evidence/health checks are not guest preparation.")
+        $lines.Add("Planned execution: $($Plan.resize.execution). Prefer native running resize for a fresh current-cluster listing, with explicit restart downtime approval; use a separately planned/approved cold path when relocation is needed or requested. Never fall back automatically. Compatible SCSI-to-SCSI uses a size-only VM update: no NVMe conversion, boot staging, driver installation or disk capability PATCH. Guest evidence/health checks are not guest preparation.")
         $lines.Add('A failed resize can leave the desired ARM/portal size at the target while runtime remains old. Successful mutation/start, fresh guest IMDS size and actual logical CPU observation are required; a displayed target is not success.')
     }
     if ($Plan.capacityReservation) {

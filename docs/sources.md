@@ -5,6 +5,20 @@ utility, customer material or SAP project implementation is bundled.
 
 Native resize additions reviewed 2026-10-12:
 
+- https://learn.microsoft.com/en-us/cli/azure/vm?view=azure-cli-latest#az-vm-resize
+  documents `az vm resize --resource-group ... --name ... --size ...`.
+  The resize page also documents PowerShell `Get-AzVMSize`,
+  `Get-AzVM`/`HardwareProfile.VmSize`/`Update-AzVM`. These supply native size-change
+  functionality; identical client wire requests are not assumed.
+- https://learn.microsoft.com/en-us/azure/virtual-machines/migration/sizes/scsi-to-nvme-migration
+  and https://learn.microsoft.com/en-us/azure/virtual-machines/enable-nvme-remote-faqs
+  explicitly document in-place SCSI-to-NVMe conversion without rebuilding the
+  VM configuration. Image modernization/redeployment can be the better
+  workload-specific choice, but it is not a universal Linux requirement.
+  The conversion utility remains community/as-is tooling; its Gen1, ADE and
+  temporary-disk cautions do not authorize decryption, preview registration
+  or expansion of this toolkit's tested profiles. Detailed driver/boot/data
+  evidence remains required rather than assuming all current images ready.
 - https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/resize-vm
   documents current-cluster options, possible deallocation, running resize
   restart, lost allocation/dynamic IPs, Linux versus Windows temporary-disk

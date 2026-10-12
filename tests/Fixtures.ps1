@@ -82,6 +82,7 @@ function New-FixtureApproval {
         schemaVersion = 'approval/1.0'; planHash = $Plan.hash; vmId = $Plan.vmId
         tenantId = $Plan.tenantId; subscriptionId = $Plan.subscriptionId
         targetSize = $Plan.targetSize; targetController = $Plan.targetController
+        executionMode = $Plan.resize.execution; restartDowntime = $true
         expiresAt = $Plan.expiresAt; testResourceGroup = 'azvm-upgrade-lab-offline'
         labOnly = $true; downtime = $true; temporaryDataLoss = $true; guestCommands = $true
         exclusiveWindow = $true; requireOwnerAcceptance = $true

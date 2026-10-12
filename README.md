@@ -38,8 +38,10 @@ Both **SCSI-to-SCSI (non-NVMe target)** and SCSI-to-NVMe lab orchestration are
 implemented. SCSI-to-SCSI is native **size-only resize**, not a conversion:
 no NVMe boot staging, driver/package installation, controller PATCH or OS disk
 capability change. Plans distinguish current-cluster resize options from
-deallocation/reassessment; the executor retains explicit cold-resize downtime
-consent and verifies guest runtime size/CPUs, not just ARM desired size.
+deallocation/reassessment; the executor **prefers native running resize** when
+fresh current-cluster evidence permits, with explicit restart downtime consent.
+Cold relocation must be separately planned/approved; no automatic fallback.
+Both paths verify guest runtime size/CPUs, not just ARM desired size.
 Same-interface full-cycle live acceptance remains
 unproven; paid tests remain suspended after the documented deadline breach.
 See [capacity reservations and removal choices](docs/planning.md#capacity-reservations).

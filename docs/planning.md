@@ -88,21 +88,32 @@ absent target that requires deallocation/reassessment; unknown, stale or
 denied observations never become availability proof.
 
 Ordinary native running resize is possible for a compatible listed size, but
-it **restarts** the VM. The toolkit's existing bounded single-VM executor
-deliberately retains the explicitly approved cold sequence:
+it **restarts** the VM. The default `-ResizeMode PreferRunning` selects
+`running-size-update` only for compatible unchanged-controller standalone
+VMs with fresh running/current-cluster exact-target evidence. Unknown evidence
+refuses; unsupported placement/reservation/temp cases remain blocked.
+`-ResizeMode Deallocate` explicitly plans the cold path even for a listed target.
+If the target is absent on the current cluster, the plan instead describes
+deallocation/reassessment and its allocation-loss risk; that exact plan must
+be approved before execution. There is **no automatic cold fallback**.
 
 1. Read exact ownership, per-VM resize options, regional SKU/restrictions,
    quotas, disks/security/placement and guest/data/network/application health.
    Obtain protection, downtime, temporary-data-loss and exclusive-window consent.
-2. Deallocate only the selected VM. This releases its current allocation;
-   dynamic IP addresses and temporary data can be lost. No other VM is stopped.
-3. Refresh and retain the deallocated native resize list. If the exact target
-   is still absent, or the list is unknown/denied/incomplete, stop before the
-   size update. Do not select another size, zone or region or replay a failed
-   allocation automatically.
+2. For `running-size-update`, explicitly approve `executionMode` and
+   `restartDowntime=true` in addition to the existing safety consents. Recheck
+   that the VM is still running and the exact target remains on its cluster.
+   Retain intent and perform the size-only update without deallocate/start.
+   A failed/uncertain operation stays pending; never replay it or deallocate
+   as a recovery shortcut.
+3. For the separately planned cold path, deallocate only the selected VM.
+   This releases its current allocation; dynamic IP addresses and temporary
+   data can be lost. Refresh and retain the deallocated native resize list.
+   If the exact target is still absent, or the list is unknown/denied/incomplete,
+   stop before the size update. Do not select another size, zone or region.
 4. PATCH only `hardwareProfile.vmSize`, retaining controller, disks, NICs,
-   security and reservation association. Start and wait for successful Azure
-   operation/provisioning and running state.
+   security and reservation association. Only the cold path issues start.
+   Both paths wait for successful Azure operation/provisioning and running state.
 5. Verify fresh guest IMDS compute `vmSize` and actual logical CPU count against
    target `vCPUsAvailable` (or `vCPUs` when not constrained), plus the existing
    controller/data/mount/network/health checks. A displayed ARM/portal target
@@ -121,6 +132,30 @@ keeps its narrower temporary-disk exclusions for both paths. SCSI compatibility
 alone does not relax generation, storage, security or workload restrictions.
 Explicit preparation exercises in a full-cycle test harness test that separate
 feature; they are not prerequisites for an ordinary SCSI-only resize.
+
+### Equivalent native functionality through CLI and PowerShell
+
+The portal, `az vm resize` and `Update-AzVM` provide Azure-native VM size-change
+functionality. These examples are guidance, **not live authorization** or a
+replacement for toolkit approval/health/journal safeguards:
+
+```azurecli
+az vm list-vm-resize-options --resource-group <resource-group> --name <vm-name>
+az vm resize --resource-group <resource-group> --name <vm-name> --size <exact-target>
+```
+
+```powershell
+Get-AzVMSize -ResourceGroupName '<resource-group>' -VMName '<vm-name>'
+$vm = Get-AzVM -ResourceGroupName '<resource-group>' -Name '<vm-name>'
+$vm.HardwareProfile.VmSize = '<exact-target>'
+Update-AzVM -ResourceGroupName '<resource-group>' -VM $vm
+```
+
+A running resize restarts and may fail allocation despite listing/quota.
+If relocation/controller conversion requires deallocation, obtain the
+different plan and consent first. These clients need not send identical wire
+requests; the toolkit uses a minimal native ARM PATCH with operation polling
+and runtime/health verification. It does not automate the portal UI.
 
 ## Capacity reservations
 

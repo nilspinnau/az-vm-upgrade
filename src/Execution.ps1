@@ -16,6 +16,20 @@ function Assert-UpgradeApproval {
     foreach ($consent in @('labOnly','downtime','temporaryDataLoss','guestCommands','exclusiveWindow')) {
         if ($Approval[$consent] -ne $true) { throw "Explicit $consent approval is required." }
     }
+    $execution = Get-Field $Plan 'resize.execution'
+    if ($execution -eq 'running-size-update') {
+        if ($Approval.executionMode -cne $execution -or $Approval.restartDowntime -ne $true) {
+            throw 'Explicit running-size-update executionMode and restartDowntime consent are required.'
+        }
+        if ($Plan.sourceController -cne $Plan.targetController -or $Plan.resize.status -ne 'listed-on-current-cluster') {
+            throw 'Native running resize requires an unchanged controller and current-cluster target listing.'
+        }
+        foreach ($placement in @('availabilitySet','virtualMachineScaleSet','proximityPlacementGroup','host','hostGroup','extendedLocation')) {
+            if (Get-Field $Plan.evidence.vm $placement) { throw 'Native running resize supports standalone placement only.' }
+        }
+    } elseif ($Approval.executionMode -and $Approval.executionMode -cne $execution) {
+        throw 'Approval executionMode does not match the exact planned path.'
+    }
     if (-not $Approval.protection.reference -or $Approval.protection.type -notin @('application-consistent-backup','accepted-recovery-method') -or
         $Approval.protection.accepted -ne $true) {
         throw 'Approved application-consistent protection or an explicitly accepted recovery method is required; a bare snapshot is insufficient.'
@@ -173,9 +187,14 @@ function Assert-LiveUpgradeGate {
         (Get-ResizePlacementAssessment $live $Plan.targetSize).status -in @('unknown','not-listed-while-deallocated')) {
         throw 'Fresh resize-list evidence is unavailable or exact target is not in the deallocated list; stop and reassess, never choose an alternate automatically.'
     }
+    if ((Get-Field $Plan 'resize.execution') -eq 'running-size-update' -and
+        (Get-ResizePlacementAssessment $live $Plan.targetSize).status -ne 'listed-on-current-cluster') {
+        throw 'Native running resize is no longer eligible on the current cluster; reassess/reapprove, never silently deallocate.'
+    }
     if ($Guest) {
         if (-not $live.guest) { throw 'Fresh guest readiness is unavailable.' }
-        $freshPlan = New-VmUpgradePlan -Evidence $live -TargetSize $Plan.targetSize -Controller $Plan.targetController -WorkloadReview $Plan.workloadReview
+        $resizeMode = if (Get-Field $Plan 'resize.requestedMode') { $Plan.resize.requestedMode } else { 'Deallocate' }
+        $freshPlan = New-VmUpgradePlan -Evidence $live -TargetSize $Plan.targetSize -Controller $Plan.targetController -WorkloadReview $Plan.workloadReview -ResizeMode $resizeMode
         if ($freshPlan.classification -ne 'ready') { throw "Fresh guest assessment is $($freshPlan.classification); do not deallocate." }
         if ($live.guest.storageIdentityHash -cne $Plan.evidence.guest.storageIdentityHash -or
             $live.guest.sentinelHash -cne $Plan.evidence.guest.sentinelHash) { throw 'Guest storage or application sentinel changed after approval.' }
@@ -293,6 +312,8 @@ function Invoke-VmUpgrade {
             $journal = Read-UpgradeJson $journalPath
             Test-UpgradeDocument $journal journal | Out-Null
             if ($journal.planHash -cne $plan.hash) { throw 'Existing journal belongs to a different plan. Preserve it and review recovery before any new run.' }
+            if ((Get-Field $plan 'resize.execution') -eq 'running-size-update' -and
+                $journal.executionMode -cne 'running-size-update') { throw 'Native resize journal execution mode is missing or mismatched; inspect rather than reinterpret a cold run.' }
             if ($journal.phase -eq 'reconciled') { return $journal }
             if (-not $Resume) { throw 'An existing journal requires explicit -Resume.' }
             if ($journal.pendingOperation) { throw "Interrupted $($journal.pendingOperation.name) has uncertain outcome. Inspect Azure and follow recovery guide; it is never replayed automatically." }
@@ -303,6 +324,7 @@ function Invoke-VmUpgrade {
                 expectedFingerprint = $plan.fingerprint; originalEvidence = $plan.evidence
                 lastEvidence = $plan.evidence; pendingOperation = $null; lastError = $null; events = @()
                 protection = $approval.protection; approvalHash = Get-UpgradeHash $approval
+                executionMode = Get-Field $plan 'resize.execution'
             }
             Save-UpgradePhase $journal $journalPath 'planned' $null
             Save-UpgradePhase $journal $journalPath 'approved' $null
@@ -322,12 +344,22 @@ function Invoke-VmUpgrade {
             Save-UpgradePhase $journal $journalPath 'protected' $live
         }
         if ($journal.phase -eq 'protected') {
-            $null = Assert-LiveUpgradeGate $plan $approval $journal -Guest
-            $requestId = Start-UpgradeOperation $journal $journalPath 'deallocate'
-            Invoke-ArmPowerAction $plan.vmId deallocate $requestId
-            Wait-VmState $plan.vmId 'deallocated' $plan.sourceSize $plan.sourceController | Out-Null
-            $live = Get-VmEvidence $plan.vmId
-            Save-UpgradePhase $journal $journalPath 'deallocated' $live
+            $live = Assert-LiveUpgradeGate $plan $approval $journal -Guest
+            if ((Get-Field $plan 'resize.execution') -eq 'running-size-update') {
+                $requestId = Start-UpgradeOperation $journal $journalPath 'running-size-update'
+                Invoke-MinimalArmPatch $plan.vmId '2024-07-01' @{
+                    properties = @{ hardwareProfile = @{ vmSize = $plan.targetSize } }
+                } $requestId $live.vm.etag | Out-Null
+                Wait-VmState $plan.vmId 'running' $plan.targetSize $plan.targetController | Out-Null
+                $live = Get-VmEvidence $plan.vmId
+                Save-UpgradePhase $journal $journalPath 'started' $live
+            } else {
+                $requestId = Start-UpgradeOperation $journal $journalPath 'deallocate'
+                Invoke-ArmPowerAction $plan.vmId deallocate $requestId
+                Wait-VmState $plan.vmId 'deallocated' $plan.sourceSize $plan.sourceController | Out-Null
+                $live = Get-VmEvidence $plan.vmId
+                Save-UpgradePhase $journal $journalPath 'deallocated' $live
+            }
         }
         if ($journal.phase -eq 'deallocated') {
             $live = Assert-LiveUpgradeGate $plan $approval $journal
@@ -428,6 +460,7 @@ function Get-VmRecoveryGuide {
 
 Last completed phase: **$($journal.phase)**
 Pending operation: **$($journal.pendingOperation.name)**
+Planned execution mode: **$($journal.executionMode)**
 Last error: $($journal.lastError.detail)
 
 1. Preserve this journal and the approval; inspect ARM model, instance view and Azure Activity Log using the recorded request IDs.
@@ -438,6 +471,7 @@ Last error: $($journal.lastError.detail)
 6. Protection reference: $($journal.protection.reference). Restore using the accepted recovery procedure and application-owner approval.
 7. Restore any recorded guest preparation settings only after confirming the restored controller is compatible. Reconcile Terraform desired HCL and use supported refresh/import workflows; never edit state JSON.
 8. Preserve the original security profile, including encryptionAtHost=$((Get-Field $original 'securityProfile.encryptionAtHost')). Snapshots protect disk contents, not VM host-encryption configuration: a restored VM must explicitly retain encryption at host, use a supported SKU and have the Registered subscription feature. Never disable encryption to regain capacity. DES/CMK, ADE and confidential security are separate unsupported recovery paths.
+9. A native running resize failure does not authorize deallocate/start or a different size. Reassess and approve a separate recovery path; never turn a pending native update into automatic cold fallback.
 
 This guide is instructions, not authorization or a runnable restore script.
 "@

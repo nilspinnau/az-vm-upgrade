@@ -4,6 +4,15 @@ BeforeAll {
     & (Get-Module AzVmUpgrade) {
         param($Path,$Scenario,$SharedScopePath)
         $script:wrapperText = Get-Content $Path -Raw
+        # Only the in-memory, fully mocked program receives synthetic date inputs.
+        $absolutePattern = '(?m)^\$absolute=\[DateTimeOffset\]::Parse\(''[0-9T:Z-]+''\)\r?$'
+        $latestPattern = '(?m)^if\(\$first -gt \[DateTimeOffset\]::Parse\(''[0-9T:Z-]+''\)\)\{throw ''Approved latest start time passed''\}\r?$'
+        if ([regex]::Matches($script:wrapperText,$absolutePattern).Count -ne 1 -or
+            [regex]::Matches($script:wrapperText,$latestPattern).Count -ne 1) {
+            throw 'Unsupported offline deadline input shape; do not bypass date gates.'
+        }
+        $script:wrapperText = [regex]::Replace($script:wrapperText,$absolutePattern,'$absolute=[DateTimeOffset]::UtcNow.AddHours(5)')
+        $script:wrapperText = [regex]::Replace($script:wrapperText,$latestPattern,'if($first -gt [DateTimeOffset]::UtcNow.AddHours(1)){throw ''Approved latest start time passed''}')
         $script:currentWrapperPath = $Path
         $script:workerScenario = $Scenario
         $script:sharedScopePath = $SharedScopePath

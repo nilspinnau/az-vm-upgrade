@@ -89,6 +89,18 @@ WhatIf checks the local approval contract but does not call Azure.
 Removing WhatIf is a disruptive action and requires separate test approval.
 The VM must be tagged `az-vm-upgrade-disposable=true`; production VMs are refused.
 
+For an unchanged SCSI controller, the default `-ResizeMode PreferRunning`
+prefers a native running size-only resize if fresh per-VM options list the
+exact target. It **restarts** the VM; `downtime=true` is not zero-downtime consent.
+Copy `plan.resize.execution` to approval `executionMode`. A running plan also
+requires `restartDowntime=true`. Plan hash binds the selected execution mode,
+VM/target and disruption; do not change a cold approval to run a native path.
+To deliberately choose deallocation, assess with `-ResizeMode Deallocate`.
+An absent current-cluster target also produces a cold relocation/reassessment
+plan. Both require approval before any mutation. Native failure never falls
+back to deallocate/start, a different target or blind mutation replay.
+See [native workflow and CLI/PowerShell guidance](planning.md#equivalent-native-functionality-through-cli-and-powershell).
+
 Technical verification leaves the journal at `verified` until actual
 post-verification owner acceptance and, where declared, Terraform reconciliation:
 
