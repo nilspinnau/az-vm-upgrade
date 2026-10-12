@@ -130,6 +130,8 @@ function Invoke-GuestPreparation {
         }
         $live = Get-VmEvidence -VmId $Preparation.vmId -ObservationPath "$journalPath.pre-$Action"
         Write-UpgradeJson $live "$journalPath.pre-$Action.json"
+        Assert-LabWorkDeadline
+        if ($Action -eq 'apply' -and [DateTimeOffset]::UtcNow -ge [DateTimeOffset]::Parse($Preparation.expiresAt)) { throw 'Preparation request expired while collecting evidence; no guest mutation submitted.' }
         if ($live.vm.id -ine $Preparation.vmId -or $live.subscriptionId -ine $identity.subscriptionId) { throw 'Live VM identity does not match the preparation request.' }
         if ($Action -eq 'apply' -and $live.fingerprint -cne $Preparation.expectedFingerprint) { throw 'Live resources changed since the plan was approved; reassess.' }
         if (@($live.instanceView.statuses | Where-Object code -EQ 'PowerState/running').Count -ne 1) { throw 'VM must be running for guest preparation.' }
@@ -172,6 +174,13 @@ function Restart-VmForPreparation {
     if ($journal.status -notin @('applied-awaiting-reboot', 'rolled-back-awaiting-reboot')) { throw "Journal state $($journal.status) does not permit a preparation restart." }
     $live = Get-VmEvidence -VmId $Preparation.vmId -ObservationPath "$journalPath.pre-restart"
     Write-UpgradeJson $live "$journalPath.pre-restart.json"
+    Assert-LabWorkDeadline
+    if ([DateTimeOffset]::UtcNow -ge [DateTimeOffset]::Parse($Preparation.expiresAt)) { throw 'Preparation request expired while collecting restart evidence; no restart submitted.' }
+    $power = Invoke-ArmRead "$($Preparation.vmId)/instanceView" '2024-07-01'
+    Write-UpgradeJson $power "$journalPath.pre-restart.power.json"
+    Assert-LabWorkDeadline
+    if ([DateTimeOffset]::UtcNow -ge [DateTimeOffset]::Parse($Preparation.expiresAt)) { throw 'Preparation request expired before restart; no restart submitted.' }
+    if (@($power.statuses | Where-Object code -EQ 'PowerState/running').Count -ne 1) { throw 'Fresh ARM power state must be running before preparation restart.' }
     if ((Get-PreparationModelHash $live) -cne $Preparation.expectedModelHash) { throw 'Azure configuration changed during preparation; stop and reassess.' }
     if (-not $PSCmdlet.ShouldProcess($Preparation.vmId, 'Restart VM (no deallocate, resize or controller change)')) { return }
     $script:ExecutingVmId = $Preparation.vmId

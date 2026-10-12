@@ -187,3 +187,21 @@ package/kernel. A separately approved live boot is needed to verify the
 actually installed package, running kernel, module paths and initramfs on that
 exact image. Until then do not substitute an image/kernel or add another
 distro by inference.
+
+## Preparation restart prerequisite review (2026-10-12)
+
+Microsoft's [common VM error codes](https://learn.microsoft.com/en-us/troubleshoot/azure/virtual-machines/windows/error-messages)
+applies to Linux and Windows and explicitly lists `OperationNotAllowed` /
+`The operation requires the VM to be running (or set to run)`, along with
+separate deallocated/in-progress operation errors. The retained resize-08
+409 establishes a rejected running-state prerequisite, not a diagnosed
+platform defect or authorization to start/retry. The last running instance
+view preceded the request by about 2h43m; it cannot establish state at the
+request. The bounded preparation correction refreshes and retains that
+state immediately before restart and rechecks request expiry.
+
+The [restart/resize troubleshooting article](https://learn.microsoft.com/en-us/troubleshoot/azure/virtual-machines/windows/restart-resize-error-troubleshooting)
+recommends collecting deployment/activity logs, but its allocation-failure
+and network-profile examples do not explain this observed 409. No suggested
+redeploy, reapply, start or retry was performed. Exact historical state
+transition cause remains unknown.

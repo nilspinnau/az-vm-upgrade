@@ -115,6 +115,69 @@ function Get-VmIdentity {
     }
 }
 
+function Assert-LabWorkDeadline {
+    if ($env:AZVM_LAB_WORK_DEADLINE -and [DateTimeOffset]::UtcNow -ge [DateTimeOffset]::Parse($env:AZVM_LAB_WORK_DEADLINE)) {
+        throw 'Lab work deadline reached; stop new work and initiate exact approved cleanup.'
+    }
+}
+
+function Invoke-UpgradeProcess {
+    param(
+        [Parameter(Mandatory)][Diagnostics.ProcessStartInfo]$StartInfo,
+        [ValidateRange(1,86400)][int]$TimeoutSeconds = 900,
+        [DateTimeOffset]$Deadline = [DateTimeOffset]::MaxValue,
+        [string]$ObservationPath,
+        [string]$Operation
+    )
+    Assert-LabWorkDeadline
+    $started = [DateTimeOffset]::UtcNow
+    $end = $started.AddSeconds($TimeoutSeconds)
+    if ($Deadline -lt $end) { $end = $Deadline }
+    if ($env:AZVM_LAB_WORK_DEADLINE) {
+        $work = [DateTimeOffset]::Parse($env:AZVM_LAB_WORK_DEADLINE)
+        if ($work -lt $end) { $end = $work }
+    }
+    if ($end -le $started) { throw 'External command deadline reached before start.' }
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $StartInfo
+    $observation = @{ startedAt = $started.ToString('o'); deadline = $end.ToString('o')
+        executable = [IO.Path]::GetFileName($StartInfo.FileName); status = 'starting' }
+    if ($Operation) { $observation.operation = $Operation }
+    if ($ObservationPath) { Write-UpgradeJson $observation $ObservationPath }
+    $stdout = $null; $stderr = $null; $launched = $false
+    try {
+        if (-not $process.Start()) { throw 'Could not start external command.' }
+        $launched = $true
+        $observation.pid = $process.Id; $observation.status = 'running'
+        if ($ObservationPath) { Write-UpgradeJson $observation $ObservationPath }
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        while (-not $process.HasExited -or -not $stdout.IsCompleted -or -not $stderr.IsCompleted) {
+            if ([DateTimeOffset]::UtcNow -ge $end) { throw 'External command wall-clock deadline reached; remote operation outcome may be unknown; do not replay.' }
+            Start-Sleep -Milliseconds 100
+        }
+        if ([DateTimeOffset]::UtcNow -ge $end) { throw 'External command returned after its wall-clock deadline; stop and clean up.' }
+        $observation.status = 'exited'; $observation.exitCode = $process.ExitCode
+        @{ exitCode = $process.ExitCode; stdout = $stdout.GetAwaiter().GetResult(); stderr = $stderr.GetAwaiter().GetResult() }
+    } catch {
+        $observation.status = 'failed'; $observation.error = $_.Exception.Message
+        throw
+    } finally {
+        try {
+            if ($launched -and -not $process.HasExited) {
+                $process.Kill($true)
+                if (-not $process.WaitForExit(5000)) { Write-Warning "Child process $($process.Id) did not exit after termination; exact cleanup still required." }
+            }
+            if ($stdout -and $stdout.IsCompletedSuccessfully) { $observation.stdout = $stdout.Result }
+            if ($stderr -and $stderr.IsCompletedSuccessfully) { $observation.stderr = $stderr.Result }
+        } finally {
+            $process.Dispose()
+            $observation.finishedAt = [DateTimeOffset]::UtcNow.ToString('o')
+            if ($ObservationPath) { Write-UpgradeJson $observation $ObservationPath }
+        }
+    }
+}
+
 function Invoke-UpgradeAz {
     param([Parameter(Mandatory)][string[]]$Arguments, [int]$TimeoutSeconds = 900)
     $command = (Get-Command az -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
@@ -135,23 +198,25 @@ function Invoke-UpgradeAz {
         $start.FileName = $command
         foreach ($arg in $allArgs) { $start.ArgumentList.Add($arg) }
     }
-    $process = [Diagnostics.Process]::new()
-    $process.StartInfo = $start
-    try {
-        if (-not $process.Start()) { throw 'Could not start Azure CLI.' }
-        $stdout = $process.StandardOutput.ReadToEndAsync()
-        $stderr = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-            $process.Kill($true)
-            $process.WaitForExit()
-            throw "Azure CLI timed out after $TimeoutSeconds seconds; inspect Azure operation state before retry."
+    $observationPath = if ($env:AZVM_LAB_COMMAND_JOURNAL_DIRECTORY) {
+        Join-Path $env:AZVM_LAB_COMMAND_JOURNAL_DIRECTORY "command-$([guid]::NewGuid().ToString('N')).json"
+    } else { $null }
+    $operation = [Collections.Generic.List[string]]::new()
+    foreach ($arg in $Arguments) {
+        if ($arg -notmatch '^[a-z][a-z0-9-]*$') { break }
+        $operation.Add($arg)
+        if ($operation.Count -ge 3) { break }
+    }
+    if ($Arguments[0] -eq 'rest') {
+        $methodIndex = [array]::IndexOf($Arguments, '--method')
+        if ($methodIndex -ge 0 -and $methodIndex + 1 -lt $Arguments.Count -and $Arguments[$methodIndex + 1] -match '^(get|post|put|patch|delete)$') {
+            $operation.Add($Arguments[$methodIndex + 1].ToUpperInvariant())
         }
-        $text = $stdout.GetAwaiter().GetResult()
-        $errorText = $stderr.GetAwaiter().GetResult()
-        if ($process.ExitCode -ne 0) { throw "Azure CLI failed ($($process.ExitCode)): $errorText" }
-        if ([string]::IsNullOrWhiteSpace($text)) { return $null }
-        return ($text | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String)
-    } finally { $process.Dispose() }
+    }
+    $result = Invoke-UpgradeProcess -StartInfo $start -TimeoutSeconds $TimeoutSeconds -ObservationPath $observationPath -Operation ($operation -join ' ')
+    if ($result.exitCode -ne 0) { throw "Azure CLI failed ($($result.exitCode)): $($result.stderr)" }
+    if ([string]::IsNullOrWhiteSpace($result.stdout)) { return $null }
+    return ($result.stdout | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String)
 }
 
 function Invoke-ArmRead {

@@ -847,10 +847,35 @@ InModuleScope AzVmUpgrade {
             Mock Get-VmEvidence { $script:evidence }
             Mock Invoke-ArmPowerAction {}
             Mock Wait-VmState {}
+            Mock Invoke-ArmRead { $script:evidence.instanceView }
             Restart-VmForPreparation -Preparation $script:prep -RebootConsent -JournalDirectory $script:journals -Confirm:$false | Should -Be 'applied-restarted-awaiting-reassessment'
             Should -Invoke Invoke-ArmPowerAction -Times 1 -ParameterFilter { $Action -eq 'restart' }
             Should -Invoke Invoke-ArmPowerAction -Times 0 -ParameterFilter { $Action -ne 'restart' }
             (Get-Content (Join-Path $script:RepositoryRoot 'src\Preparation.ps1') -Raw) | Should -Not -Match 'Action deallocate|Resize-|vm update|Invoke-ArmMutation'
+        }
+        It 'refuses restart after evidence collection consumes the request window' {
+            [IO.Directory]::CreateDirectory($script:journals) | Out-Null
+            $path = Join-Path $script:journals "prep-$($script:prep.hash.Substring(0,16)).journal.json"
+            Write-UpgradeJson @{status='applied-awaiting-reboot';vmId=$script:prep.vmId;events=@()} $path
+            Mock Get-VmEvidence {
+                $script:prep.expiresAt = [DateTimeOffset]::UtcNow.AddSeconds(-1).ToString('o')
+                $script:evidence
+            }
+            Mock Invoke-ArmPowerAction {}
+            { Restart-VmForPreparation -Preparation $script:prep -RebootConsent -JournalDirectory $script:journals -Confirm:$false } | Should -Throw '*expired while collecting restart evidence*'
+            Should -Invoke Invoke-ArmPowerAction -Times 0
+            (Read-UpgradeJson $path).pendingOperation | Should -BeNullOrEmpty
+        }
+        It 'refuses stale running-state assumptions without starting or retrying a VM' {
+            [IO.Directory]::CreateDirectory($script:journals) | Out-Null
+            $path = Join-Path $script:journals "prep-$($script:prep.hash.Substring(0,16)).journal.json"
+            Write-UpgradeJson @{status='applied-awaiting-reboot';vmId=$script:prep.vmId;events=@()} $path
+            Mock Get-VmEvidence { $script:evidence }
+            Mock Invoke-ArmRead { @{statuses=@(@{code='PowerState/deallocated'})} }
+            Mock Invoke-ArmPowerAction {}
+            { Restart-VmForPreparation -Preparation $script:prep -RebootConsent -JournalDirectory $script:journals -Confirm:$false } | Should -Throw '*Fresh ARM power state*'
+            Should -Invoke Invoke-ArmPowerAction -Times 0
+            (Read-UpgradeJson "$path.pre-restart.power.json").statuses[0].code | Should -Be 'PowerState/deallocated'
         }
         It 'accepts only fresh post-reboot evidence and rejects unchanged boot, regressions and hidden changes' {
             $manifest = @{ status = 'ok'; action = 'apply'; planHash = $script:prep.planHash; bootId = 'boot-aaaaaaaa'; observedAt = [DateTimeOffset]::UtcNow.AddMinutes(-5).ToString('o') }

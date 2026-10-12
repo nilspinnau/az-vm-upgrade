@@ -5,6 +5,51 @@ are recorded in [acceptance](acceptance.md). Other subscriptions, regions,
 resources, registration and cleanup require their own concrete approval.
 Test scripts are opt-in, never called by offline CI.
 
+**Paid testing is currently suspended following the resize-08 time-bound
+breach. The historical commands below are procedures, not permission to run.**
+
+## Bounded lab worker supervision
+
+`tests/integration/Invoke-BoundedLabCycle.ps1` is an opt-in parent for an
+exact reviewed lab wrapper, not a deployment generator or spending approval.
+It requires distinct paid-wrapper and exact cleanup consent, a fresh result
+path, absent exact group, correct subscription, a deadline within four hours
+and a 45-minute reserve. The reviewed wrapper still owns image, resources,
+identity method, formatting consent, cost and execution gates.
+
+The parent starts the wrapper in a separate PowerShell process and stops
+that entire process tree at reserve, even if a Terraform or other child
+hangs. In the worker, `AZVM_LAB_WORK_DEADLINE` bounds Azure CLI commands and
+pre-mutation checks. `AZVM_LAB_COMMAND_JOURNAL_DIRECTORY` retains command
+family, PID, start/deadline/end, exit/failure and available stdout/stderr;
+arguments, credentials and script payloads are not logged as command labels.
+Treat all resulting stdout/stderr/evidence as sensitive and keep them ignored.
+Preparation also checks expiry after evidence collection and refreshes raw
+power state immediately before restart; non-running/unknown states refuse,
+not implicitly start or retry.
+
+On worker failure/deadline, the parent's finalizer rechecks exact group
+name/location/disposable tag and submits only that group's deletion with
+`--no-wait`. Command waits and absence polling are bounded by the cleanup
+deadline. Independent resource-list absence is required for success.
+Unverified cleanup produces an explicit intervention error, never a pass.
+If execution resumes after deadline, it records a breach and attempts only
+exact cleanup within a 15-minute emergency grace, not renewed lab work.
+
+**A local supervisor cannot guarantee cleanup during host sleep, shutdown,
+process termination or loss of cloud access.** Both processes stop executing
+when the host suspends. Future paid testing needs an agreed awake/reliable
+host and operator cleanup coverage; externally hosted cleanup would require
+separate design/scope approval and has not been deployed. No unattended
+deadline or hard invoice guarantee is claimed.
+
+Offline regressions run real local child-process success/stall/termination
+and the actual supervisor body with mocked cloud ownership/deletion/absence,
+including a real stalled worker followed by mocked cleanup. They also cover
+cleanup timeout, ownership refusal and overdue-resume behavior. These prove
+local control flow, not live Azure deletion deadlines or the complete
+same-interface acceptance sequence.
+
 ## Deploy only after approvals
 
 `infra/test-vm` creates one VM in a new `azvm-upgrade-lab-*` resource group:

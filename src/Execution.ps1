@@ -57,6 +57,7 @@ function Wait-VmState {
 
 function Invoke-ArmHttpRequest {
     param([uri]$Uri, [string]$Method, [string]$Body, [string]$Token, [hashtable]$Headers)
+    Assert-LabWorkDeadline
     if ($Uri.Scheme -ne 'https' -or $Uri.Host -ne 'management.azure.com' -or
         -not $Uri.IsDefaultPort -or $Uri.UserInfo) { throw 'Refusing to send credentials outside the Azure public-cloud ARM endpoint.' }
     $handler = [Net.Http.HttpClientHandler]::new()

@@ -10,7 +10,7 @@ AzureRM is pinned to 4.48.0; the provider lock file is committed.
 |---|---|
 | PowerShell parsing | All module, customer, guest, fixture and integration scripts passed |
 | Configured static analysis | Module, customer, guest and integration scripts passed |
-| Decision/orchestration tests | 180 Pester tests passed; no failures, skips or unrun tests. Includes explicit ARM lab identity success/refusal and legacy IMDS preservation, atomic create/replace, transient/persistent reader locks, read-only failures, unchanged journal phase/intent on publication failure, encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
+| Decision/orchestration tests | 193 Pester tests passed; no failures, skips or unrun tests. Includes wall-clock command bounds, real stalled-child termination and mocked supervisor cleanup, preparation expiry/fresh-power refusal, explicit ARM lab identity success/refusal and legacy IMDS preservation, atomic create/replace, transient/persistent reader locks, read-only failures, unchanged journal phase/intent on publication failure, encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
 | Guest script syntax | Bash syntax and embedded Python AST parsing passed; no guest script executed |
 | Terraform format/validate | Passed |
 | Installed provider schema | Linux/Windows size/controller/host-encryption and NIC acceleration attributes verified |
@@ -410,3 +410,74 @@ the optional whole-wrapper runner separately passed **four tests**.
 The new guest-validator fixtures cover two positive and 34 refusal cases,
 including sanitized empty metadata, contradictory IDs/OS/LUNs, stale proof,
 wrong ownership/provenance/controller and unknown mode.
+
+## Resize-08: partial identity proof and time-bound breach
+
+**Paid testing is suspended. No further deployment is proposed or authorized.**
+The owner separately approved the exact same-interface configuration and
+explicit synthetic-disk formatting/ARM-Azure-udev/exclusive-window method.
+The run used `383fae0`. Deployment, that initialization method and preparation
+apply passed. Preparation restart returned HTTP 409 `OperationNotAllowed`:
+`The operation requires the VM to be running (or set to run).`
+No completed reboot, rollback, resize, snapshots or recovery is claimed.
+
+| Recorded stage, UTC | Actual observation |
+|---|---|
+| Start, October 11 23:35:56.747151 | Four-hour deadline October 12 03:35:56; cleanup reserve 02:50:56 |
+| Deployment 23:38:22; initialization 23:39:54 | Exact explicitly approved synthetic SCSI identity/formatting passed |
+| Preparation apply 23:47:10 | Initramfs readiness verified; azure-vm-utils already present and unchanged |
+| Instance view 23:47:17; evidence assembly October 12 02:30:25 | Old running state was reused after an approximately 2h43m evidence-collection gap |
+| Restart intent 02:30:28; failure retained 02:30:43 | 409 above; actual fresh power state at the rejected request was not captured |
+| Cleanup inventory 02:31:15; completion 06:35:43.757206 | Synchronous group-delete/finalizer span approximately 4h04m; exact server deletion completion unknown |
+
+Elapsed **6.996392 hours**, exceeding the approved bound by approximately
+**2h59m47s**. The time approval was breached. Exact cleanup subsequently
+passed; an independent CLI process verified group absence and zero residual
+resources. Read-only revalidation at 07:22Z reconfirmed absence.
+Original failure evidence and timestamps remain protected and ignored.
+
+Host logs establish Modern Standby, including a lid-triggered entry at
+23:48:20 and transitions during the gaps. They do not establish precise
+thread scheduling, the particular evidence subcommand waiting, or which
+part of deletion elapsed server-side. Sleep, tool waits and Azure delays
+must not be assigned invented durations.
+
+Proven control defects were between-stage-only reserve checks, no independent
+worker supervisor, relative process waits followed by potentially unbounded
+stream/termination waits, untimed native Terraform children, and no
+post-collection expiry/fresh-power check immediately before preparation
+restart. Corrections use bounded UTC polling, command start/end/failure
+sidecars, post-collection expiry checks and retained fresh power evidence.
+The opt-in lab supervisor bounds the whole worker, kills a stalled child
+tree and enters exact ownership-checked cleanup with nonwaiting delete and
+bounded absence polling. Cleanup failure remains explicitly unverified.
+It cannot run through host suspension/shutdown; see [operational limits](testing.md#bounded-lab-worker-supervision).
+
+Offline proof comprises **193 Pester tests and six Terraform mocks**,
+including real local stalled processes with mocked cloud cleanup, overdue
+resume handling, ownership refusal and cleanup-poll timeout. Four existing
+whole-wrapper mocks passed using the compatible resize-07 wrapper with
+both legacy and spliced ARM-helper initialization. That fixture rejects the
+resize-08 wrapper's changed explicit-helper call shape before execution;
+it is not claimed as unchanged resize-08 whole-program proof.
+No live mutation was replayed to validate these fixes.
+
+For the actual source-only VM plus two disks, conservatively using **eight
+rounded hours** rather than assuming seven billable hours models compute
+USD 0.736, disks USD 0.059178, the retained full-rate transaction envelope
+USD 0.196768 and USD 0.50 network/metering reserve: **USD 1.491946**.
+This deliberately covers more than the measured seven-hour span; no target,
+snapshot or recovery resources were created. It is not an invoice or hard
+cap. Actual allocation/disk lifetimes, usage meters, transfer, rounding,
+currency/tax effects and delayed attribution remain uncertain. The stale
+four-hour/full-cycle USD 1.811439 model does not describe this attempt.
+Refreshed subscription month-to-date ActualCost is USD 2.3201021104584
+(07:22Z), up USD 0.302683098547 from the earlier reading; the delta is not
+an attributed final lab charge. The user USD 500 ceiling grants no renewed
+spending authority.
+
+Same-interface full-cycle acceptance, corrected supervisor live behavior and
+owner acceptance remain unresolved. An awake, reliable execution/cleanup
+environment must be established before any future paid-test decision.
+Windows, other distributions, module-staged drivers and production support
+are not expanded.
