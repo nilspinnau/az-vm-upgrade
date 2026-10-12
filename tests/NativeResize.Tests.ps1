@@ -43,6 +43,24 @@ InModuleScope AzVmUpgrade {
             $e=New-FixtureEvidence;$e.Remove('resizeOptions')
             (New-VmUpgradePlan $e -TargetSize Standard_D2s_v6 -Controller SCSI -WorkloadReview (New-FixtureReview)).classification | Should -Be 'incomplete-evidence'
         }
+        It 'does not invent target controller support from fresh resize listing and current SCSI evidence' {
+            $e=New-FixtureEvidence
+            $target=@($e.skus|Where-Object name -CEQ 'Standard_D2s_v6')[0]
+            $target.capabilities=@($target.capabilities|Where-Object name -INE 'DiskControllerTypes')
+            $before=Get-UpgradeHash $target.capabilities
+            $e.vm.storageProfile.diskControllerType | Should -Be 'SCSI'
+            $e.guest.actualController | Should -Be 'SCSI'
+            $e.resizeOptions.status | Should -Be 'collected'
+            $e.resizeOptions.sizes | Should -Contain $target.name
+            $plan=New-VmUpgradePlan $e -TargetSize $target.name -Controller SCSI -WorkloadReview (New-FixtureReview) -ResizeMode Deallocate
+            $plan.resize.status | Should -Be 'listed-on-current-cluster'
+            $plan.classification | Should -Be 'incomplete-evidence'
+            ($plan.checks|Where-Object name -EQ 'controller').status | Should -Be 'unknown'
+            Get-SkuCapability $target 'DiskControllerTypes' | Should -BeNullOrEmpty
+            (Get-UpgradeHash $target.capabilities) | Should -Be $before
+            $plannedTarget=@($plan.evidence.skus|Where-Object name -CEQ $target.name)[0]
+            (Get-UpgradeHash $plannedTarget.capabilities) | Should -Be $before
+        }
         It 'keeps controller conversion distinct from native resize-list availability' {
             $p=New-FixturePlan
             $p.resize.status | Should -Be 'controller-conversion-required'

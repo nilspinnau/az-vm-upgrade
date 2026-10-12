@@ -5,6 +5,12 @@ utility, customer material or SAP project implementation is bundled.
 
 Native resize additions reviewed 2026-10-12:
 
+- https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dasv5-series
+  describes Dasv5 sizes/features but does not establish an explicit remote
+  controller capability. https://learn.microsoft.com/en-us/azure/virtual-machines/nvme-overview
+  says older generations typically support SCSI; this is not an exact SKU
+  fallback rule. Missing returned `DiskControllerTypes` stays unknown even
+  when a native resize-options list contains the target.
 - https://learn.microsoft.com/en-us/azure/virtual-machines/trusted-launch-existing-vm-gen-1
   documents the separate Gen1-to-Trusted-Launch route, not Standard Gen2,
   supported OS/SKU, irreversible boot conversion, backup/ASR/encryption and

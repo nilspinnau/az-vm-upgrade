@@ -631,6 +631,34 @@ resume even after completion. The 11 reviewed top-level wrapper/supervised mocks
 also pass using synthetic recognized date inputs, not renewed live approval.
 # Bounded proof closure criteria
 
+## Parallel attempts, 2026-10-12
+
+Three launch attempts consumed **3/20** newly authorized test slots, distinct
+from **two source-lab creation attempts**. All three owned groups were
+independently verified absent; supervisors exited. No attempt breached its
+deadline. No new migration path was proved by these attempts.
+
+| Attempt | Actual result | Creation to verified absence (UTC) | Duration-based estimate, not billed charges |
+|---|---|---|---|
+| Native running SCSI | Source UEFI/SCSI, IMDS source size/CPU, sentinel/mount/health, HTTPS/VF, host encryption and baseline normal Terraform no-op passed. Plan refused missing target controller capability; zero upgrade/power mutations, no upgrade journal. Target runtime/final reconciliation not reached | 17:08:28 to 17:22:23; about 835 seconds | USD0.02768 duration subtotal; USD0.82687 with retained transaction/network/other allowances |
+| Explicit cold SCSI | Source baseline passed the same boot/data/network/encryption observations. Plan refused before deallocate/resize/start. Target Terraform plan retained, but final no-op/owner acceptance not reached | 17:04:16 to 17:14:39; 623 seconds | USD0.02934 including modeled transactions; USD0.62324 with conservative additional allowances |
+| Gen2 NVMe full cycle | Final Cost Management preflight returned HTTP429; stopped before creation without retry/replay. Preparation, conversion, recovery and Terraform acceptance not run | No creation; refusal/absence 17:05:48 to 17:06:09 | Zero incremental resource estimate; not an assertion of zero billed charges |
+
+All invoice/billed totals remain **unknown**. Estimates use retained public
+meter rates and observed duration; broad allowances are not actual usage.
+
+For both SCSI attempts, the raw CLI target SKU, retained baseline and plan
+capability payloads matched: 28 capabilities, no `DiskControllerTypes`.
+This establishes a missing returned capability, not a toolkit parsing or
+normalization defect. Fresh per-VM resize-list membership and current
+ARM/guest SCSI do not themselves establish the target controller. The public
+Dasv5 specifications do not state an exact controller; the NVMe overview's
+"typically" SCSI wording is not substituted for exact compatibility evidence.
+Refusal remains unchanged and is covered by a sanitized regression; no
+implicit capability, automatic alternative or paid replay was introduced.
+Supportability retrieval was attempted first but required re-authentication;
+no internal known-issue confirmation is claimed or published.
+
 Generation/image additions passed 293 offline Pester regressions, including
 21 dedicated generation/provenance cases. The complete offline command also
 passed parsing/analyzers/guest syntax and six Terraform mocked plans before
