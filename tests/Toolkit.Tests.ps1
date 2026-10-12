@@ -466,15 +466,20 @@ InModuleScope AzVmUpgrade {
             Mock Invoke-ArmPowerAction {
                 param($VmId,$Action,$RequestId)
                 if ($Action -eq 'deallocate') { $script:simulation.instanceView.statuses[1].code = 'PowerState/deallocated' }
-                if ($Action -eq 'start') { $script:simulation.instanceView.statuses[1].code = 'PowerState/running' }
+                if ($Action -eq 'start') {
+                    $script:simulation.instanceView.statuses[1].code = 'PowerState/running'
+                    $script:simulation.guest.runtimeSizeEvidence.vmSize = $script:simulation.vm.hardwareProfile.vmSize
+                }
             }
             Mock Invoke-MinimalArmPatch {
                 param($Id,$ApiVersion,$Body,$RequestId,$ETag)
                 if ($Id -match '/disks/') { $script:simulation.disks[0].supportedCapabilities.diskControllerTypes = 'SCSI, NVMe' }
                 else {
                     $script:simulation.vm.hardwareProfile.vmSize = $Body.properties.hardwareProfile.vmSize
-                    $script:simulation.vm.storageProfile.diskControllerType = $Body.properties.storageProfile.diskControllerType
-                    $script:simulation.guest.actualController = $Body.properties.storageProfile.diskControllerType
+                    if ($Body.properties.ContainsKey('storageProfile')) {
+                        $script:simulation.vm.storageProfile.diskControllerType = $Body.properties.storageProfile.diskControllerType
+                        $script:simulation.guest.actualController = $Body.properties.storageProfile.diskControllerType
+                    }
                     ($script:simulation.usage | Where-Object {$_.name.value -eq 'standardDSv5Family'}).currentValue = 2
                     ($script:simulation.usage | Where-Object {$_.name.value -eq 'standardDSv6Family'}).currentValue = 4
                 }
@@ -621,17 +626,66 @@ InModuleScope AzVmUpgrade {
             $journal.lastEvidence.disks[0].supportedCapabilities.diskControllerTypes | Should -Be 'SCSI'
             Should -Invoke Invoke-MinimalArmPatch -Times 1 -Exactly
             Should -Invoke Invoke-MinimalArmPatch -Times 0 -Exactly -ParameterFilter { $Id -match '/disks/' }
+            Should -Invoke Invoke-MinimalArmPatch -Times 1 -Exactly -ParameterFilter { $Body.properties.Keys.Count -eq 1 -and $Body.properties.ContainsKey('hardwareProfile') }
+            $journal.events.phase | Should -Contain 'size-update'
         }
         It 'rejects missing MANA use, mismatched data and unproved VF use after start' {
             $live = New-FixtureEvidence
             $live.vm.hardwareProfile.vmSize = $script:plan.targetSize
             $live.vm.storageProfile.diskControllerType = 'NVMe'; $live.guest.actualController = 'NVMe'
+            $live.guest.runtimeSizeEvidence.vmSize = $script:plan.targetSize
             $live.guest.manaInUse = 'unknown'
             { Test-PostUpgradeGuest $script:plan $live } | Should -Throw '*MANA*'
             $live.guest.manaInUse = 'pass'; $live.guest.sentinelHash = 'different'
             { Test-PostUpgradeGuest $script:plan $live } | Should -Throw '*checksum*'
             $live.guest.sentinelHash = $script:plan.evidence.guest.sentinelHash; $live.guest.accelerationInUse = 'unknown'
             { Test-PostUpgradeGuest $script:plan $live } | Should -Throw '*VF*'
+        }
+        It 'stops a native resize before size mutation when the target remains absent after deallocation' {
+            $script:simulation.resizeOptions.sizes=@('Standard_D2s_v5')
+            $script:plan = New-VmUpgradePlan $script:simulation -TargetSize Standard_D2s_v6 -Controller SCSI -WorkloadReview (New-FixtureReview)
+            $script:plan.resize.status | Should -Be 'requires-deallocation'
+            $script:approval = New-FixtureApproval $script:plan
+            Write-UpgradeJson $script:plan $script:planPath
+            Write-UpgradeJson $script:approval $script:approvalPath
+            { Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false } | Should -Throw '*resize-list*'
+            $journal = Read-UpgradeJson (Get-ChildItem $script:journalDir -Filter *.journal.json).FullName
+            $journal.phase | Should -Be 'deallocated'
+            $journal.gateEvidence.resizeOptions.sizes | Should -Not -Contain 'Standard_D2s_v6'
+            $journal.pendingOperation | Should -BeNullOrEmpty
+            Should -Invoke Invoke-MinimalArmPatch -Times 0 -Exactly
+            Should -Invoke Invoke-ArmPowerAction -Times 0 -Exactly -ParameterFilter { $Action -eq 'start' }
+        }
+        It 'uses the exact native target when the resize list expands after deallocation' {
+            $script:simulation.resizeOptions.sizes=@('Standard_D2s_v5')
+            $script:plan = New-VmUpgradePlan $script:simulation -TargetSize Standard_D2s_v6 -Controller SCSI -WorkloadReview (New-FixtureReview)
+            $script:approval = New-FixtureApproval $script:plan
+            Write-UpgradeJson $script:plan $script:planPath
+            Write-UpgradeJson $script:approval $script:approvalPath
+            Mock Get-VmEvidence {
+                $copy = $script:simulation | ConvertTo-Json -Depth 100 | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String
+                if ($copy.instanceView.statuses[1].code -eq 'PowerState/deallocated') {
+                    $copy.resizeOptions.sizes=@('Standard_D2s_v5','Standard_D2s_v6')
+                }
+                $copy.fingerprint = Get-ConfigurationFingerprint $copy
+                return $copy
+            }
+            (Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false).phase | Should -Be 'reconciled'
+            Should -Invoke Invoke-MinimalArmPatch -Times 1 -Exactly -ParameterFilter {
+                $Body.properties.Keys.Count -eq 1 -and $Body.properties.hardwareProfile.vmSize -ceq 'Standard_D2s_v6'
+            }
+        }
+        It 'retains old-runtime evidence without verification when the model alone reaches the target' {
+            Mock Invoke-ArmPowerAction {
+                param($VmId,$Action,$RequestId)
+                $script:simulation.instanceView.statuses[1].code = "PowerState/$(if($Action -eq 'start'){'running'}else{'deallocated'})"
+            }
+            { Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false } | Should -Throw '*runtime size/CPU*'
+            $journal = Read-UpgradeJson (Get-ChildItem $script:journalDir -Filter *.journal.json).FullName
+            $journal.phase | Should -Be 'started'
+            $journal.validationEvidence.vm.hardwareProfile.vmSize | Should -Be $script:plan.targetSize
+            $journal.validationEvidence.guest.runtimeSizeEvidence.vmSize | Should -Be $script:plan.sourceSize
+            $journal.events.phase | Should -Not -Contain 'verified'
         }
         It 'fails operation timeouts and provisioning failures explicitly' {
             Mock Invoke-ArmRead { @{properties=@{provisioningState='Failed'}} }

@@ -217,7 +217,7 @@ function Test-TargetCompatibility {
 }
 
 function Get-GuestAdvisory {
-    param([Parameter(Mandatory)]$Evidence)
+    param([Parameter(Mandatory)]$Evidence, [string]$TargetController)
     $guest = $Evidence.guest
     if (-not $guest) { return @() }
     $items = [Collections.Generic.List[string]]::new()
@@ -226,7 +226,7 @@ function Get-GuestAdvisory {
         $items.Add('Optional separate security assessment: existing Gen2 VMs can be evaluated for Trusted Launch. Verify supported size/OS, Linux SBInfo Secure Boot compatibility, Enhanced Backup policy and applicable ASR constraints. SKU/NVMe migration does not require or authorize this security change; preserve security type, Secure Boot and vTPM. Follow https://learn.microsoft.com/azure/virtual-machines/trusted-launch-existing-vm with separate consent and recovery testing; do not assume reversible enablement.')
     }
     $windows = "$($guest.osProfile)" -like 'windows:*'
-    if (-not $windows -and (Get-Field $guest 'azureVmUtils') -and $guest.azureVmUtils -ne 'pass') {
+    if ($TargetController -eq 'NVMe' -and -not $windows -and (Get-Field $guest 'azureVmUtils') -and $guest.azureVmUtils -ne 'pass') {
         $items.Add('azure-vm-utils (azure-nvme-id and /dev/disk/azure links) was not fully detected. Install it from the distribution package channel if your release provides one and use /dev/disk/azure/* paths in application configuration. It supplies stable device identification only; it does not replace NVMe boot-driver staging or stable-mount verification.')
     }
     if ($guest.manaDriver -ne 'pass') {
@@ -241,6 +241,33 @@ function Get-GuestAdvisory {
         $items.Add('MANA/VF use is unknown (an idle VM shows no traffic). Generate representative traffic and compare VF counters; unknown is not a pass.')
     }
     return @($items)
+}
+
+function Get-ResizePlacementAssessment {
+    param($Evidence, [string]$TargetSize)
+    $result = @{ status='unknown'; detail='Fresh per-VM resize options are unavailable. Regional SKU advertising and portal selection do not prove current-cluster availability or allocation capacity.'
+        execution='deallocate-size-update-start' }
+    $options = Get-Field $Evidence 'resizeOptions'
+    if (-not $TargetSize -or -not $options -or $options.status -ne 'collected') { return $result }
+    try { Assert-FreshEvidence $options.observedAt } catch { $result.detail=$_.Exception.Message; return $result }
+    $running = @($Evidence.instanceView.statuses | Where-Object code -IEQ 'PowerState/running').Count -eq 1
+    $deallocated = @($Evidence.instanceView.statuses | Where-Object code -IEQ 'PowerState/deallocated').Count -eq 1
+    if (@($Evidence.instanceView.statuses | Where-Object code -ILike 'PowerState/*').Count -ne 1 -or
+        (-not $running -and -not $deallocated)) {
+        $result.detail='Resize placement requires an unambiguous running or deallocated power observation; stopped/transitional/unknown is not deallocated.'
+        return $result
+    }
+    if ($TargetSize -cin @($options.sizes)) {
+        $result.status = if ($running) { 'listed-on-current-cluster' } else { 'listed-while-deallocated' }
+        $result.detail='Exact target is in the observed per-VM resize list, not a capacity guarantee. A native running resize still restarts. This executor deliberately uses approved deallocation/start; it does not silently switch to an in-place restart path.'
+    } elseif ($running) {
+        $result.status='requires-deallocation'
+        $result.detail='Exact target is absent from the current-cluster resize list. Deallocation may expose additional sizes but releases the current allocation. Recheck the exact target after deallocation; no alternate size/zone/region is selected.'
+    } elseif ($deallocated) {
+        $result.status='not-listed-while-deallocated'
+        $result.detail='Exact target is absent from the deallocated VM resize list. Stop before size update; preserve evidence and reassess without an alternate target or blind retry.'
+    }
+    return $result
 }
 
 function Get-CapacityReservationAssessment {
@@ -361,6 +388,12 @@ function New-VmUpgradePlan {
         try { Assert-FreshEvidence $guest.observedAt }
         catch { $checks.Add((New-Check 'guest-freshness' stale $_.Exception.Message)) }
         if (-not $guest.complete) { $checks.Add((New-Check 'guest-coverage' unknown 'Incomplete guest probe.')) }
+        $runtime = Get-Field $guest 'runtimeSizeEvidence'
+        if (-not $runtime -or $runtime.status -ne 'collected') {
+            $checks.Add((New-Check 'guest-runtime-size' unknown 'Fresh guest IMDS compute size is required; ARM model size alone does not prove allocation.'))
+        } elseif ($runtime.vmSize -cne $sourceSize) {
+            $checks.Add((New-Check 'guest-runtime-size' failed 'Guest IMDS size contradicts ARM desired size; investigate a previous failed resize before new work.'))
+        }
         if ($null -eq $guest.pendingReboot) { $checks.Add((New-Check 'pending-reboot' unknown 'Pending reboot evidence is unavailable for this OS profile.')) }
         elseif ($guest.pendingReboot) { $checks.Add((New-Check 'pending-reboot' required 'Reboot and reassess before the maintenance window.')) }
         if ($null -eq $guest.persistentMounts -or $null -eq $guest.layoutSupported) {
@@ -440,13 +473,25 @@ function New-VmUpgradePlan {
             $iac.status = $iac.check.status
             if ($iac.check.status -ne 'pass') { $checks.Add((New-Check 'terraform' unsupported $iac.check.detail)) }
         }
-        $iac.suggestions = @("Set $($TerraformMapping.vmAddress).size = $TargetSize", "Set $($TerraformMapping.vmAddress).disk_controller_type = $Controller", 'Preserve NIC properties; no ignore_changes is generated.')
+        $controllerSuggestion = if ($currentController -eq $Controller) {
+            "Retain existing $($TerraformMapping.vmAddress).disk_controller_type; no controller change is needed."
+        } else { "Set $($TerraformMapping.vmAddress).disk_controller_type = $Controller" }
+        $iac.suggestions = @("Set $($TerraformMapping.vmAddress).size = $TargetSize", $controllerSuggestion, 'Preserve NIC properties; no ignore_changes is generated.')
         if ($reservation.groupId) { $iac.suggestions += "Preserve $($TerraformMapping.vmAddress).capacity_reservation_group_id = $($reservation.groupId); association changes need separate owner approval and plan." }
         if ((Get-Field $vm 'securityProfile.encryptionAtHost') -eq $true) {
             $iac.suggestions += "Retain $($TerraformMapping.vmAddress).encryption_at_host_enabled = true"
         }
     }
-    $advisories = @(Get-GuestAdvisory $Evidence)
+    $advisories = @(Get-GuestAdvisory $Evidence -TargetController $Controller)
+    $resize = Get-ResizePlacementAssessment $Evidence $TargetSize
+    if ($currentController -and $Controller -and $currentController -ne $Controller) {
+        $resize.status='controller-conversion-required'
+        $resize.execution='deallocate-size-controller-update-start'
+        $resize.detail='A controller change is not native size-only resize. Use the separately gated conversion procedure and guest boot preparation; native resize-list membership is not conversion authorization.'
+    }
+    if ($TargetSize -and $currentController -eq $Controller -and $resize.status -in @('unknown','not-listed-while-deallocated')) {
+        $checks.Add((New-Check 'resize-placement' unknown $resize.detail 'Compute VM sizes API'))
+    }
     $classification = if (@($checks | Where-Object { $_.name -eq 'boot-generation' -and $_.status -eq 'unsupported' }).Count) { 'requires-rebuild' }
     elseif (@($checks | Where-Object { $_.name -eq 'workload-certification' }).Count) { 'requires-application-specific-work' }
     elseif (@($checks | Where-Object status -EQ 'unsupported').Count -or @($checks | Where-Object status -EQ 'failed').Count) { 'blocked' }
@@ -463,6 +508,7 @@ function New-VmUpgradePlan {
         classification = $classification
         executionBoundary = 'disposable-lab-only'; checks = @($checks); advisories = $advisories; candidates = $candidates
         quota = $quotaResult; capacity = $Evidence.capacity; capacityReservation = $reservation; terraform = $iac
+        resize = $resize
         workloadReview = $WorkloadReview; fingerprint = $Evidence.fingerprint
         evidence = $Evidence; hash = $null
         disruption = 'Single VM deallocate/update/start; downtime and loss of temporary storage. Original allocation cannot be guaranteed.'

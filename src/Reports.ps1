@@ -86,6 +86,13 @@ function Export-VmUpgradeReport {
         $lines.Add("- $($quota.name): $($quota.status); current $($quota.current), delta $($quota.delta), projected $($quota.projected), limit $($quota.limit).")
     }
     $lines.Add('Allocation risk remains: no capacity reservation is created and no other zone/region is selected.')
+    if ($Plan.resize) {
+        $lines.Add('')
+        $lines.Add('## Native resize placement')
+        $lines.Add("Status: $($Plan.resize.status). $(ConvertTo-MarkdownCell $Plan.resize.detail)")
+        $lines.Add("Executor policy: $($Plan.resize.execution). Compatible SCSI-to-SCSI uses a size-only VM update: no NVMe conversion, boot staging, driver installation or disk capability PATCH. Guest evidence/health checks are not guest preparation.")
+        $lines.Add('A failed resize can leave the desired ARM/portal size at the target while runtime remains old. Successful mutation/start, fresh guest IMDS size and actual logical CPU observation are required; a displayed target is not success.')
+    }
     if ($Plan.capacityReservation) {
         $lines.Add('')
         $lines.Add('## Capacity reservation (read-only assessment)')

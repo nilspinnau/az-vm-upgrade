@@ -3,6 +3,19 @@
 Reviewed 2026-10-09. These are factual references; no third-party conversion
 utility, customer material or SAP project implementation is bundled.
 
+Native resize additions reviewed 2026-10-12:
+
+- https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/resize-vm
+  documents current-cluster options, possible deallocation, running resize
+  restart, lost allocation/dynamic IPs, Linux versus Windows temporary-disk
+  limits and desired-model versus runtime size after a failed resize.
+- https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/list-available-sizes?view=rest-compute-2024-07-01
+  is the per-VM `vmSizes` endpoint, distinct from regional SKU advertising.
+- https://learn.microsoft.com/en-us/azure/virtual-machines/instance-metadata-service
+  documents guest-local compute `vmSize`, the Metadata header and proxy
+  bypass. The probe records that observation plus OS logical CPU count;
+  neither CPU count nor desired ARM model alone proves exact runtime SKU.
+
 The public [Trusted Launch FAQ](https://learn.microsoft.com/en-us/azure/virtual-machines/trusted-launch-faq#can-i-disable-trusted-launch-for-a-new-vm-deployment)
 documents explicit Standard security with Compute API `2025-11-01` or newer.
 The restoration harness requires that API rather than using older CLI create

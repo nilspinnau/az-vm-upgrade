@@ -169,6 +169,10 @@ function Assert-LiveUpgradeGate {
     if (@($compatibility | Where-Object status -NE 'pass').Count) { throw 'Fresh target compatibility or restrictions check did not pass.' }
     $quota = Get-QuotaProjection $source[0] $target[0] $live.usage
     if ($quota.status -ne 'pass') { throw 'Fresh quota check did not pass.' }
+    if ($Plan.sourceController -eq $Plan.targetController -and
+        (Get-ResizePlacementAssessment $live $Plan.targetSize).status -in @('unknown','not-listed-while-deallocated')) {
+        throw 'Fresh resize-list evidence is unavailable or exact target is not in the deallocated list; stop and reassess, never choose an alternate automatically.'
+    }
     if ($Guest) {
         if (-not $live.guest) { throw 'Fresh guest readiness is unavailable.' }
         $freshPlan = New-VmUpgradePlan -Evidence $live -TargetSize $Plan.targetSize -Controller $Plan.targetController -WorkloadReview $Plan.workloadReview
@@ -217,6 +221,15 @@ function Test-PostUpgradeGuest {
     $guest = $Live.guest
     if (-not $guest -or $guest.complete -ne $true -or $guest.agentReady -ne $true -or
         $guest.pendingReboot -ne $false -or $guest.persistentMounts -ne $true) { throw 'Post-upgrade guest/agent health check failed.' }
+    $target = @($Live.skus | Where-Object name -CEQ $Plan.targetSize)
+    $runtime = Get-Field $guest 'runtimeSizeEvidence'
+    $processors = if ($target.Count -eq 1) { Get-SkuCapability $target[0] 'vCPUsAvailable' } else { $null }
+    if (-not $processors -and $target.Count -eq 1) { $processors = Get-SkuCapability $target[0] 'vCPUs' }
+    if (-not $runtime -or $runtime.status -ne 'collected' -or $runtime.vmSize -cne $Plan.targetSize -or
+        ($runtime.logicalProcessors -isnot [int] -and $runtime.logicalProcessors -isnot [long]) -or
+        -not $processors -or $runtime.logicalProcessors -ne [int]$processors) {
+        throw 'Guest runtime size/CPU observation is missing or contradicts the target; ARM desired size alone is not allocation proof.'
+    }
     if ($Plan.targetController -eq 'NVMe' -and $guest.actualController -ne 'NVMe') { throw 'Guest did not prove NVMe OS-disk use.' }
     if ($Plan.targetController -eq 'SCSI' -and $guest.actualController -ne 'SCSI') { throw 'Guest did not prove SCSI OS-disk use.' }
     if ($guest.storageIdentityHash -cne $Plan.evidence.guest.storageIdentityHash) { throw 'Persistent disk identities/mounts changed.' }
@@ -341,13 +354,14 @@ function Invoke-VmUpgrade {
                 }
             }
             $live = Assert-LiveUpgradeGate $plan $approval $journal
-            $requestId = Start-UpgradeOperation $journal $journalPath 'size-controller-update'
-            Invoke-MinimalArmPatch $plan.vmId '2024-07-01' @{
-                properties = @{
-                    hardwareProfile = @{ vmSize = $plan.targetSize }
-                    storageProfile = @{ diskControllerType = $plan.targetController }
-                }
-            } $requestId $live.vm.etag | Out-Null
+            $properties = @{ hardwareProfile = @{ vmSize = $plan.targetSize } }
+            $operation = 'size-update'
+            if ($plan.sourceController -ne $plan.targetController) {
+                $properties.storageProfile = @{ diskControllerType = $plan.targetController }
+                $operation = 'size-controller-update'
+            }
+            $requestId = Start-UpgradeOperation $journal $journalPath $operation
+            Invoke-MinimalArmPatch $plan.vmId '2024-07-01' @{ properties = $properties } $requestId $live.vm.etag | Out-Null
             Wait-VmState $plan.vmId 'deallocated' $plan.targetSize $plan.targetController | Out-Null
             $live = Get-VmEvidence $plan.vmId
             Save-UpgradePhase $journal $journalPath 'updated' $live

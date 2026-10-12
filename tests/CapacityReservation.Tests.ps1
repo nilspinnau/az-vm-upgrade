@@ -142,6 +142,7 @@ InModuleScope AzVmUpgrade {
                 }
                 if($Id -like '*/extensions'){return @{value=@()}}
                 if($Id -like '*/instanceView'){return $script:e.instanceView}
+                if($Id -like '*/vmSizes'){return @{value=@(@{name='Standard_D2s_v6'})}}
                 if($Id -like '*/disks/*'){return @{id=$Id;properties=@{diskSizeGB=64}}}
                 if($Id -like '*/networkInterfaces/*'){return @{id=$Id;properties=@{enableAcceleratedNetworking=$true}}}
                 throw 'Unexpected read outside fixture'
@@ -153,6 +154,27 @@ InModuleScope AzVmUpgrade {
             $e.capacityReservationEvidence.status | Should -Be 'collected'
             (Read-UpgradeJson "$out.capacity-reservation.json").reservations.Count | Should -Be 1
             Should -Invoke Invoke-ArmRead -Times 2 -Exactly -ParameterFilter {$ApiVersion -eq '2024-07-01&$expand=instanceView'}
+            (Read-UpgradeJson "$out.resize-options.json").value[0].name | Should -Be 'Standard_D2s_v6'
+            $e.resizeOptions.status | Should -Be 'collected'
+        }
+        It 'retains malformed resize-list evidence before rejecting it' {
+            Mock Invoke-ArmRead { @{value=@(@{name='Standard_D2s_v6'},@{name='Standard_D2s_v6'})} } -ParameterFilter {$Id -like '*/vmSizes'}
+            $out=Join-Path $TestDrive 'bad-resize-options'
+            $e=Get-VmEvidence $script:e.vm.id -ObservationPath $out
+            (Read-UpgradeJson "$out.resize-options.json").value.Count | Should -Be 2
+            $e.resizeOptions.status | Should -Be 'failed'
+            $e.checks.name | Should -Contain 'resize-options'
+        }
+        It 'refuses resize-list access denial without claiming current-cluster availability' {
+            Mock Invoke-ArmRead { throw 'AuthorizationFailed 403' } -ParameterFilter {$Id -like '*/vmSizes'}
+            $e=Get-VmEvidence $script:e.vm.id
+            $e.resizeOptions.status | Should -Be 'denied'
+            $e.resizeOptions.sizes.Count | Should -Be 0
+        }
+        It 'does not continue discovery when resize observation publication fails' {
+            Mock Write-UpgradeJson { throw [IO.IOException]::new('Resize observation publication failed') } -ParameterFilter {$Path -like '*.resize-options.json'}
+            {Get-VmEvidence $script:e.vm.id -ObservationPath (Join-Path $TestDrive 'unwritable')} | Should -Throw '*publication failed*'
+            Should -Invoke Invoke-ArmRead -Times 0 -Exactly -ParameterFilter {$Id -like '*capacityReservationGroups*'}
         }
         It 'retains denied access explicitly rather than assuming unassociated capacity' {
             $script:deny=$true

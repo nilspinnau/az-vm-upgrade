@@ -35,8 +35,12 @@ Launch assessment is separate, never a hidden part of a SKU migration.
 Disposable integration harnesses can initialize an exact new lab data disk and
 exercise sequential snapshot restoration only under their own explicit scope.
 Both **SCSI-to-SCSI (non-NVMe target)** and SCSI-to-NVMe lab orchestration are
-implemented. A SCSI-only target does not require NVMe boot readiness or an
-OS disk capability change. Same-interface full-cycle live acceptance remains
+implemented. SCSI-to-SCSI is native **size-only resize**, not a conversion:
+no NVMe boot staging, driver/package installation, controller PATCH or OS disk
+capability change. Plans distinguish current-cluster resize options from
+deallocation/reassessment; the executor retains explicit cold-resize downtime
+consent and verifies guest runtime size/CPUs, not just ARM desired size.
+Same-interface full-cycle live acceptance remains
 unproven; paid tests remain suspended after the documented deadline breach.
 See [capacity reservations and removal choices](docs/planning.md#capacity-reservations).
 

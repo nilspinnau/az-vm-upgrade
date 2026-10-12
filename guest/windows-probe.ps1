@@ -1,4 +1,21 @@
 $ErrorActionPreference = 'Stop'
+$runtime = @{ status='failed'; vmSize=$null; logicalProcessors=(Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors; rawResponse=$null; error=$null }
+try {
+    $request = [Net.WebRequest]::Create('http://169.254.169.254/metadata/instance/compute/vmSize?api-version=2021-02-01&format=text')
+    $request.Proxy = $null; $request.Timeout = 5000; $request.ReadWriteTimeout = 5000; $request.Headers.Add('Metadata','true')
+    $response = $request.GetResponse()
+    try {
+        $reader = [IO.StreamReader]::new($response.GetResponseStream())
+        try {
+            $buffer = [char[]]::new(257)
+            $count = $reader.ReadBlock($buffer,0,$buffer.Length)
+            $runtime.rawResponse = [string]::new($buffer,0,[Math]::Min(256,$count))
+        } finally { $reader.Dispose() }
+    } finally { $response.Dispose() }
+    $runtime.vmSize = $runtime.rawResponse.Trim()
+    if ($count -gt 256 -or $runtime.vmSize -cnotmatch '^(Standard|Basic)_[A-Za-z0-9_]+$') { throw 'IMDS compute vmSize is missing or malformed.' }
+    $runtime.status = 'collected'
+} catch { $runtime.error = $_.Exception.Message.Substring(0,[Math]::Min(160,$_.Exception.Message.Length)) }
 $os = Get-CimInstance Win32_OperatingSystem
 $disks = @(Get-Disk)
 $volumes = @(Get-Volume | Where-Object { $_.DriveType -eq 'Fixed' })
@@ -10,7 +27,9 @@ $sha = [Security.Cryptography.SHA256]::Create()
 try {
     $storageHash = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($identities -join "`n"))))).Replace('-','').ToLowerInvariant()
 } finally { $sha.Dispose() }
-$stornvme = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\stornvme'
+$stornvme = if (Test-Path 'HKLM:\SYSTEM\CurrentControlSet\Services\stornvme') {
+    Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\stornvme'
+} else { $null }
 $pending = (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') -or
     (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or
     ($null -ne (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager').PendingFileRenameOperations)
@@ -67,6 +86,7 @@ if (Test-Path 'C:\ProgramData\az-vm-upgrade\healthy') {
 }
 $guest = @{
     schemaVersion = 'guest/1.0'; observedAt = [DateTimeOffset]::UtcNow.ToString('o'); complete = $true
+    runtimeSizeEvidence = $runtime
     osProfile = "windows:$($os.BuildNumber):$env:PROCESSOR_ARCHITECTURE"
     bootMode = if ($systemDisks.Count -eq 1 -and $systemDisks[0].PartitionStyle -eq 'GPT') { 'UEFI-candidate' } else { 'unknown' }
     agentReady = (Get-Service WindowsAzureGuestAgent).Status -eq 'Running'; pendingReboot = $pending

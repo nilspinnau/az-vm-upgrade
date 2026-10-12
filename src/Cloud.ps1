@@ -120,6 +120,23 @@ function Get-VmEvidence {
     if ($ObservationPath) { Write-UpgradeJson $instance "$ObservationPath.instance-view.json" }
     $vm = Get-BoundedVmModel $raw
     $checks = [Collections.Generic.List[object]]::new()
+    $resizeOptions = @{ status='unknown'; observedAt=[DateTimeOffset]::UtcNow.ToString('o'); sizes=@(); error=$null }
+    try {
+        $options = Invoke-ArmRead "$VmId/vmSizes" '2024-07-01'
+        if ($ObservationPath) { Write-UpgradeJson $options "$ObservationPath.resize-options.json" }
+        if ($null -eq $options.value -or $options.nextLink -or
+            @($options.value | Where-Object { -not $_.name }).Count -or
+            @($options.value | Group-Object name | Where-Object Count -GT 1).Count) {
+            throw 'Incomplete or ambiguous VM resize-options response.'
+        }
+        $resizeOptions.sizes = @($options.value.name)
+        $resizeOptions.status = 'collected'
+    } catch [IO.IOException], [UnauthorizedAccessException] { throw }
+    catch {
+        $resizeOptions.status = if ($_.Exception.Message -match 'AuthorizationFailed|Forbidden|403') { 'denied' } else { 'failed' }
+        $resizeOptions.error = $_.Exception.Message
+        $checks.Add((New-Check 'resize-options' $resizeOptions.status $_.Exception.Message 'Compute VM sizes API'))
+    }
     $reservationEvidence = $null
     $reservationId = Get-Field $vm 'capacityReservation.capacityReservationGroup.id'
     if ($reservationId) {
@@ -240,6 +257,7 @@ function Get-VmEvidence {
         skus = @($skus); usage = @($usage); guest = $guest; checks = @($checks)
         hostEncryption = $hostEncryption
         capacityReservationEvidence = $reservationEvidence
+        resizeOptions = $resizeOptions
         capacity = @{ status = 'unknown'; detail = 'Quota and advertised SKU availability do not guarantee allocation.' }
         fingerprint = $null
     }

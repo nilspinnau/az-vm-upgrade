@@ -92,6 +92,7 @@ InModuleScope AzVmUpgrade {
             $p = New-VmUpgradePlan $script:encrypted -TargetSize Standard_D2s_v6 -Controller NVMe -WorkloadReview (New-FixtureReview)
             $live = $script:encrypted | ConvertTo-Json -Depth 100 | ConvertFrom-Json -AsHashtable -Depth 100
             $live.vm.hardwareProfile.vmSize = $p.targetSize
+            $live.guest.runtimeSizeEvidence.vmSize = $p.targetSize
             $live.vm.storageProfile.diskControllerType = 'NVMe'
             $live.guest.actualController = 'NVMe'
             $live.guest.managedDataMappings[0].controller = 'NVMe'

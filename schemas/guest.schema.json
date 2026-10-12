@@ -6,6 +6,16 @@
     "schemaVersion": {"const": "guest/1.0"},
     "observedAt": {"type": "string", "format": "date-time"},
     "complete": {"type": "boolean"},
+    "runtimeSizeEvidence": {
+      "type": "object",
+      "required": ["status", "vmSize", "logicalProcessors", "error"],
+      "properties": {
+        "status": {"enum": ["collected", "failed"]},
+        "vmSize": {"type": ["string", "null"]},
+        "logicalProcessors": {"type": ["integer", "null"], "minimum": 1},
+        "error": {"type": ["string", "null"]}
+      }
+    },
     "osProfile": {"type": "string"},
     "agentReady": {"type": ["boolean", "null"]},
     "pendingReboot": {"type": ["boolean", "null"]},

@@ -10,7 +10,7 @@ AzureRM is pinned to 4.48.0; the provider lock file is committed.
 |---|---|
 | PowerShell parsing | All module, customer, guest, fixture and integration scripts passed |
 | Configured static analysis | Module, customer, guest and integration scripts passed |
-| Decision/orchestration tests | 225 Pester tests passed; no failures, skips or unrun tests. Includes wall-clock command bounds, real stalled-child termination and mocked supervisor cleanup, preparation expiry/fresh-power refusal, explicit ARM lab identity success/refusal and legacy IMDS preservation, atomic create/replace, transient/persistent reader locks, read-only failures, unchanged journal phase/intent on publication failure, encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
+| Decision/orchestration tests | 257 Pester tests passed; no failures, skips or unrun tests. Includes wall-clock command bounds, real stalled-child termination and mocked supervisor cleanup, preparation expiry/fresh-power refusal, explicit ARM lab identity success/refusal and legacy IMDS preservation, atomic create/replace, transient/persistent reader locks, read-only failures, unchanged journal phase/intent on publication failure, encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
 | Guest script syntax | Bash syntax and embedded Python AST parsing passed; no guest script executed |
 | Terraform format/validate | Passed |
 | Installed provider schema | Linux/Windows size/controller/host-encryption and NIC acceleration attributes verified |
@@ -558,3 +558,42 @@ claimed from that attempt. Paid testing remains suspended, with no new
 deployment proposal, settings changes, guest command or mutation replay.
 Fresh execution gates and the reliable-awake-host/operator cleanup prerequisite
 remain mandatory before a separately approved live scope.
+
+### Native size-only resize and portal placement observations
+
+The same-controller execution now sends only `hardwareProfile.vmSize`, not
+an unnecessary controller field. Its journal names that operation `size-update`.
+SCSI targets do not require NVMe boot readiness or azure-vm-utils installation;
+missing Windows stornvme service is an explicit failed NVMe-readiness observation,
+not a fatal prerequisite for collecting SCSI evidence. Target, generation,
+temporary-disk, driver/health, quota, security, protection, reservation,
+exclusive-window and Terraform guards remain.
+
+The per-VM Compute `vmSizes` response is retained before validation and kept
+distinct from regional SKU advertising. Plans/reports distinguish current-
+cluster listing, requires-deallocation, deallocated listing and unknown/
+absent outcomes. Native cold execution refreshes the exact target list after
+deallocation; unknown/absent targets refuse the size update without substitution.
+This executor does not add a new running-resize mutation mode: its explicit
+deallocation/start consent remains necessary.
+
+Guest probes retain IMDS compute size, logical processor count and explicit
+metadata failures. Post-upgrade verification requires these observations to
+match the exact target and active constrained-core count, in addition to
+successful mutation/start and existing guest/data/network checks. A target
+displayed in ARM after failed allocation is insufficient. Runtime disagreement
+remains durably in validation evidence with no `verified` phase promotion.
+
+**257 standard Pester tests and six Terraform mocks pass**, including actual
+native state-machine success with size-only payload, expansion of the target
+list after deallocation, absent-target refusal before PATCH/start, retained
+old-runtime evidence, denied/malformed/write-failure resize observations,
+unknown/stale/listed placement distinctions, CPU/size refusal and constrained
+cores. This is offline synthetic evidence, not a live resize or broader
+production acceptance. No paid resources, guest calls or VM mutations occurred.
+The 11 optional current whole-wrapper/supervised mocks also pass; nested
+preparation/migration/recovery calls remain mocked in that fixture.
+The actual Linux IMDS-size probe fragment also executes with synthetic text
+responses: valid, empty, malformed and overlong observations retain raw bounded
+content before refusal, with proxy bypass and five-second timeout assertions.
+Stopped, missing and contradictory power states are not mislabeled deallocated.

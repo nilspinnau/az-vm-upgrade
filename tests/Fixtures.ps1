@@ -57,8 +57,10 @@ function New-FixtureEvidence {
             actualController = 'SCSI'; persistentMounts = $true; layoutSupported = $true
             storageIdentityHash = ('1' * 64); sentinelHash = ('2' * 64); applicationHealth = 'pass'
             accelerationInUse = 'pass'; manaInUse = 'pass'
+            runtimeSizeEvidence = @{status='collected';vmSize='Standard_D2s_v5';logicalProcessors=2;error=$null}
         }
         capacity = @{ status = 'unknown'; detail = 'Synthetic fixture, not live evidence.' }; fingerprint = '0' * 64
+        resizeOptions = @{status='collected';observedAt=[DateTimeOffset]::UtcNow.ToString('o');sizes=@('Standard_D2s_v5','Standard_D2s_v6');error=$null}
     }
     $evidence.fingerprint = & (Get-Module AzVmUpgrade) { param($e) Get-ConfigurationFingerprint $e } $evidence
     return $evidence

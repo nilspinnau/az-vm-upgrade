@@ -26,6 +26,16 @@
     "guest": {"type": ["object", "null"]},
     "checks": {"type": "array"},
     "capacity": {"type": "object", "required": ["status", "detail"]},
+    "resizeOptions": {
+      "type": "object",
+      "required": ["status", "observedAt", "sizes", "error"],
+      "properties": {
+        "status": {"enum": ["unknown", "collected", "denied", "failed"]},
+        "observedAt": {"type": "string", "format": "date-time"},
+        "sizes": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "error": {"type": ["string", "null"]}
+      }
+    },
     "capacityReservationEvidence": {
       "type": ["object", "null"],
       "required": ["status", "observedAt", "groupId", "group", "reservations"],

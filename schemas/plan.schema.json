@@ -19,6 +19,15 @@
     "candidates": {"type": "array"},
     "quota": {"type": "object"},
     "capacity": {"type": "object"},
+    "resize": {
+      "type": "object",
+      "required": ["status", "detail", "execution"],
+      "properties": {
+        "status": {"enum": ["unknown", "listed-on-current-cluster", "listed-while-deallocated", "requires-deallocation", "not-listed-while-deallocated", "controller-conversion-required"]},
+        "detail": {"type": "string"},
+        "execution": {"enum": ["deallocate-size-update-start", "deallocate-size-controller-update-start"]}
+      }
+    },
     "capacityReservation": {
       "type": "object",
       "required": ["status", "detail", "action"],

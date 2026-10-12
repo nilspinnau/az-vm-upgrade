@@ -147,11 +147,25 @@ sentinel = pathlib.Path("/mnt/upgrade-test/azvm-sentinel.txt")
 sentinel_hash = hashlib.sha256(sentinel.read_bytes()).hexdigest() if sentinel.exists() and sentinel.stat().st_size <= 65536 else None
 health = pathlib.Path("/var/lib/az-vm-upgrade/healthy")
 health_status = "pass" if health.exists() and health.read_text().strip() == "healthy" else "unknown"
+runtime = {"status": "failed", "vmSize": None, "logicalProcessors": os.cpu_count(), "rawResponse": None, "error": None}
+try:
+    request = urllib.request.Request("http://169.254.169.254/metadata/instance/compute/vmSize?api-version=2021-02-01&format=text",
+                                     headers={"Metadata": "true"})
+    with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=5) as response:
+        raw_size = response.read(257)
+    runtime["rawResponse"] = raw_size[:256].decode("utf-8", errors="replace")
+    runtime["vmSize"] = runtime["rawResponse"].strip()
+    if len(raw_size) > 256 or not re.fullmatch(r"(Standard|Basic)_[A-Za-z0-9_]+", runtime["vmSize"]):
+        raise ValueError("IMDS compute vmSize is missing or malformed")
+    runtime["status"] = "collected"
+except (urllib.error.URLError, TimeoutError, ValueError, TypeError, AttributeError) as error:
+    runtime["error"] = str(error)[:160]
 probe = {
     "schemaVersion": "guest/1.0", "observedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     "complete": True, "osProfile": release.get("ID", "unknown") + ":" + release.get("VERSION_ID", "unknown") + ":" + os.uname().machine,
     "kernel": os.uname().release, "bootMode": "UEFI" if pathlib.Path("/sys/firmware/efi").exists() else "BIOS",
     "agentReady": agent is not None and agent.strip() == "active", "pendingReboot": pending,
+    "runtimeSizeEvidence": runtime,
     "nvmeDriver": "pass" if module("nvme") else "failed", "nvmeBoot": boot,
     "manaDriver": "pass" if module("mana") else "failed",
     "mellanoxDriver": "pass" if module("mlx4_core") and module("mlx5_core") else "failed",

@@ -1,7 +1,8 @@
 # Compatibility, quota and evidence
 
 `Get-VmEvidence` reads the selected VM and instance view, each managed disk and
-NIC, the complete subscription-filtered regional SKU list and regional usage.
+NIC, the per-VM native resize-options list, the complete subscription-filtered
+regional SKU list and regional usage.
 It exports only bounded model fields, not OS-profile passwords, secret
 references, environment dumps or application configuration files.
 
@@ -67,13 +68,59 @@ original size may not be available for rollback.
 
 For an existing SCSI VM, explicitly select `-Controller SCSI` and a target
 advertising SCSI. The same-controller state machine retains all managed disk
-controller capabilities and does not require NVMe guest boot checks. It still
+controller capabilities and uses a **size-only native Azure VM PATCH**: no
+controller field update, NVMe conversion, NVMe guest boot staging, utility
+package installation or mandatory preparation/rollback cycle. It still
 requires actual SCSI identity, stable mounts/data, both relevant network
 drivers, health/protection, exact SKU/quota/security/placement checks and
 Terraform reconciliation. Source/target temporary-disk exclusions are
 unchanged. This is an implemented offline-tested path, not accepted live
 same-interface/production coverage. It does not authorize NVMe-to-SCSI
 conversion or another configuration merely because a target uses SCSI.
+
+### Portal cluster warning and the exact native workflow
+
+The portal warning **"This size is not currently available on the underlying
+cluster"** is a placement signal, not proof that quota is exhausted or that
+the target is incompatible. A running VM's native resize list reflects the
+current cluster. Plans/reports distinguish a target listed there from an
+absent target that requires deallocation/reassessment; unknown, stale or
+denied observations never become availability proof.
+
+Ordinary native running resize is possible for a compatible listed size, but
+it **restarts** the VM. The toolkit's existing bounded single-VM executor
+deliberately retains the explicitly approved cold sequence:
+
+1. Read exact ownership, per-VM resize options, regional SKU/restrictions,
+   quotas, disks/security/placement and guest/data/network/application health.
+   Obtain protection, downtime, temporary-data-loss and exclusive-window consent.
+2. Deallocate only the selected VM. This releases its current allocation;
+   dynamic IP addresses and temporary data can be lost. No other VM is stopped.
+3. Refresh and retain the deallocated native resize list. If the exact target
+   is still absent, or the list is unknown/denied/incomplete, stop before the
+   size update. Do not select another size, zone or region or replay a failed
+   allocation automatically.
+4. PATCH only `hardwareProfile.vmSize`, retaining controller, disks, NICs,
+   security and reservation association. Start and wait for successful Azure
+   operation/provisioning and running state.
+5. Verify fresh guest IMDS compute `vmSize` and actual logical CPU count against
+   target `vCPUsAvailable` (or `vCPUs` when not constrained), plus the existing
+   controller/data/mount/network/health checks. A displayed ARM/portal target
+   after failed allocation is not runtime success. Missing/contradictory guest
+   observations are retained and refuse verification; CPU count alone cannot
+   distinguish equal-core SKUs.
+6. Obtain owner acceptance and reconcile Terraform desired `size`, preserving
+   the existing controller/association and requiring the normal no-op plan.
+
+The native list is not an allocation guarantee even after deallocation.
+Quota and capacity remain separate. Availability sets still need a wider
+coordinated resize and are blocked; the toolkit never deallocates their other
+members. Microsoft's current resize page supports Linux local-temp/no-temp
+transitions but not direct Windows transitions; this release intentionally
+keeps its narrower temporary-disk exclusions for both paths. SCSI compatibility
+alone does not relax generation, storage, security or workload restrictions.
+Explicit preparation exercises in a full-cycle test harness test that separate
+feature; they are not prerequisites for an ordinary SCSI-only resize.
 
 ## Capacity reservations
 
