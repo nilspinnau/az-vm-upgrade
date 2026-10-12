@@ -86,6 +86,16 @@ function Export-VmUpgradeReport {
         $lines.Add("- $($quota.name): $($quota.status); current $($quota.current), delta $($quota.delta), projected $($quota.projected), limit $($quota.limit).")
     }
     $lines.Add('Allocation risk remains: no capacity reservation is created and no other zone/region is selected.')
+    if ($Plan.capacityReservation) {
+        $lines.Add('')
+        $lines.Add('## Capacity reservation (read-only assessment)')
+        $lines.Add("Status: $($Plan.capacityReservation.status). $(ConvertTo-MarkdownCell $Plan.capacityReservation.detail)")
+        $lines.Add("Action: $(ConvertTo-MarkdownCell $Plan.capacityReservation.action)")
+        $lines.Add('Quota is deployment permission, not physical capacity. On-demand reservations are optional and paid even unused; Reserved Instances discounts do not reserve capacity. Association/removal/quantity changes are never automatic.')
+        if ($Plan.capacityReservation.groupId) {
+            $lines.Add("Preserve group $(ConvertTo-MarkdownCell $Plan.capacityReservation.groupId). Target reservation: $(ConvertTo-MarkdownCell $Plan.capacityReservation.reservationId); observed units for this VM: $(Get-SettingDisplay $Plan.capacityReservation.availableUnits).")
+        }
+    }
     $lines.Add('')
     $lines.Add('## Action plan')
     $lines.Add('Resolve every non-pass check; obtain workload-owner review and independently test application health. Reassess after guest preparation or configuration changes.')

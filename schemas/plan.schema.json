@@ -19,6 +19,15 @@
     "candidates": {"type": "array"},
     "quota": {"type": "object"},
     "capacity": {"type": "object"},
+    "capacityReservation": {
+      "type": "object",
+      "required": ["status", "detail", "action"],
+      "properties": {
+        "status": {"enum": ["not-associated", "unknown", "incompatible", "compatible-observed"]},
+        "detail": {"type": "string"},
+        "action": {"type": "string"}
+      }
+    },
     "terraform": {"type": "object"},
     "evidence": {"type": "object"},
     "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},

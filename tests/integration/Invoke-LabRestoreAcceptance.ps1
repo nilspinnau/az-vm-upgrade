@@ -76,6 +76,7 @@ if (Test-Path -LiteralPath $OutputPath) { throw 'Preserve the existing restorati
         $original = Get-VmEvidence -VmId $plan.vmId -GuestConsent -GuestNetworkProbeConsent -ObservationPath "$outputPath.original"
         Observe 'original' $original
         Test-PostUpgradeGuest $plan $original
+        if (Get-Field $original.vm 'capacityReservation') { throw 'Capacity reservation associated recovery requires separate reviewed protection/placement; this harness never detaches or changes reservations.' }
         if ($original.vm.securityProfile.securityType -and $original.vm.securityProfile.securityType -ne 'Standard') { throw 'This lab restore harness supports Standard security only.' }
         if ($original.vm.securityProfile.encryptionAtHost -ne $true -or $original.vm.storageProfile.dataDisks.Count -ne 1 -or $original.nics.Count -ne 1) {
             throw 'Restoration requires the bounded one-data-disk, one-private-NIC host-encrypted lab.'

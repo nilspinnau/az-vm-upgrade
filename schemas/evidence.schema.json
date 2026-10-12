@@ -26,6 +26,17 @@
     "guest": {"type": ["object", "null"]},
     "checks": {"type": "array"},
     "capacity": {"type": "object", "required": ["status", "detail"]},
+    "capacityReservationEvidence": {
+      "type": ["object", "null"],
+      "required": ["status", "observedAt", "groupId", "group", "reservations"],
+      "properties": {
+        "status": {"enum": ["unknown", "collected", "denied", "failed"]},
+        "observedAt": {"type": "string", "format": "date-time"},
+        "groupId": {"type": "string"},
+        "group": {"type": ["object", "null"]},
+        "reservations": {"type": "array"}
+      }
+    },
     "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
   },
   "additionalProperties": true

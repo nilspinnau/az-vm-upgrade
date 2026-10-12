@@ -205,3 +205,14 @@ recommends collecting deployment/activity logs, but its allocation-failure
 and network-profile examples do not explain this observed 409. No suggested
 redeploy, reapply, start or retry was performed. Exact historical state
 transition cause remains unknown.
+
+## Capacity reservation assessment sources
+
+- [On-demand capacity reservation overview](https://learn.microsoft.com/azure/virtual-machines/capacity-reservation-overview): quota versus capacity, optional association, size/location/zone/quantity scope, unsupported placement, over-allocation and paid unused capacity.
+- [Modify reservations](https://learn.microsoft.com/azure/virtual-machines/capacity-reservation-modify): associated resize needs a target-size reservation or prior approved detachment; increasing quantity can fail and reducing quantity affects reserved protection.
+- [Remove a VM association](https://learn.microsoft.com/azure/virtual-machines/capacity-reservation-remove-vm): deallocate/detach/restart, or reserved-quantity-zero then detach when deallocation is not viable; neither procedure is automated here.
+- [Capacity Reservations GET, API 2024-07-01](https://learn.microsoft.com/en-us/rest/api/compute/capacity-reservations/get?view=rest-compute-2024-07-01): `$expand=instanceView`, `properties.instanceView.utilizationInfo.currentCapacity` and `virtualMachinesAllocated`; response shape used in synthetic regressions.
+
+These sources justify read-only planning, not a new paid reservation workflow
+or guaranteed availability. Compatible association execution/recovery is not
+promoted without separately reviewed/live-tested protection and placement.

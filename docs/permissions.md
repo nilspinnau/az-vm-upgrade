@@ -7,6 +7,7 @@ never requests role assignments, provider registration or preview registration.
 |---|---|
 | Resource Graph inventory | Read access to each explicitly selected scope; `Microsoft.ResourceGraph/resources/read` through an applicable role |
 | Fresh evidence | VM, instance-view, managed-disk and NIC reads; Compute SKU and regional usage reads |
+| Associated capacity reservation evidence | `Microsoft.Compute/capacityReservationGroups/read` and `Microsoft.Compute/capacityReservationGroups/capacityReservations/read` on the exact referenced group/members; no write, purchase, deletion or quantity-change permission is requested |
 | Optional Advisor cross-check | Advisor recommendation and metadata reads plus Resource Graph scope visibility |
 | Guest probes/preparation | Explicit owner consent plus `Microsoft.Compute/virtualMachines/runCommand/action` and a healthy guest agent |
 | Lab execution | VM write, start/deallocate actions and OS disk write for an eligible controller transition; exact test scope |

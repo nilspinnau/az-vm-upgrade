@@ -120,6 +120,43 @@ function Get-VmEvidence {
     if ($ObservationPath) { Write-UpgradeJson $instance "$ObservationPath.instance-view.json" }
     $vm = Get-BoundedVmModel $raw
     $checks = [Collections.Generic.List[object]]::new()
+    $reservationEvidence = $null
+    $reservationId = Get-Field $vm 'capacityReservation.capacityReservationGroup.id'
+    if ($reservationId) {
+        $reservationEvidence = @{ status='unknown'; observedAt=[DateTimeOffset]::UtcNow.ToString('o')
+            groupId=$reservationId; group=$null; reservations=@(); error=$null }
+        try {
+            if ($reservationId -notmatch '^/subscriptions/([0-9a-f-]{36})/resourceGroups/[^/]+/providers/Microsoft\.Compute/capacityReservationGroups/[^/]+$' -or
+                $Matches[1] -ine $identity.subscriptionId) {
+                throw 'Capacity reservation group must have an exact same-subscription ARM identity; shared/cross-subscription groups require separate review.'
+            }
+            $group = Invoke-ArmRead $reservationId '2024-07-01&$expand=instanceView'
+            $reservationEvidence.group = $group
+            if ($ObservationPath) { Write-UpgradeJson $reservationEvidence "$ObservationPath.capacity-reservation.json" }
+            if ($group.id -ine $reservationId -or $null -eq $group.properties.capacityReservations) {
+                throw 'Missing or contradictory capacity reservation group identity/member evidence.'
+            }
+            $seenReservations = @{}
+            foreach ($reference in $group.properties.capacityReservations) {
+                if (-not $reference.id -or -not $reference.id.StartsWith("$reservationId/capacityReservations/",[StringComparison]::OrdinalIgnoreCase) -or
+                    $reference.id.Substring($reservationId.Length + '/capacityReservations/'.Length) -match '^$|/' -or $seenReservations.ContainsKey($reference.id)) {
+                    throw 'Capacity reservation member identity is missing, outside the exact group or duplicated.'
+                }
+                $seenReservations[$reference.id] = $true
+                $member = Invoke-ArmRead $reference.id '2024-07-01&$expand=instanceView'
+                $reservationEvidence.reservations += $member
+                if ($ObservationPath) { Write-UpgradeJson $reservationEvidence "$ObservationPath.capacity-reservation.json" }
+                if ($member.id -ine $reference.id) { throw 'Capacity reservation member response identity mismatch.' }
+            }
+            $reservationEvidence.status = 'collected'
+        } catch [IO.IOException], [UnauthorizedAccessException] { throw }
+        catch {
+            $reservationEvidence.status = if ($_.Exception.Message -match 'AuthorizationFailed|Forbidden|403') { 'denied' } else { 'failed' }
+            $reservationEvidence.error = $_.Exception.Message
+            $checks.Add((New-Check 'capacity-reservation-evidence' $reservationEvidence.status $_.Exception.Message 'ARM capacity reservation'))
+        }
+        if ($ObservationPath) { Write-UpgradeJson $reservationEvidence "$ObservationPath.capacity-reservation.json" }
+    }
     try {
         $extensions = Invoke-ArmRead "$VmId/extensions" '2024-07-01'
         if ($null -eq $extensions.value -or $extensions.nextLink) { throw 'Incomplete VM extension list; ADE coverage cannot be assumed.' }
@@ -202,6 +239,7 @@ function Get-VmEvidence {
         }
         skus = @($skus); usage = @($usage); guest = $guest; checks = @($checks)
         hostEncryption = $hostEncryption
+        capacityReservationEvidence = $reservationEvidence
         capacity = @{ status = 'unknown'; detail = 'Quota and advertised SKU availability do not guarantee allocation.' }
         fingerprint = $null
     }

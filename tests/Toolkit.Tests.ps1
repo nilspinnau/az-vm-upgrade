@@ -608,12 +608,19 @@ InModuleScope AzVmUpgrade {
             (Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Resume -Confirm:$false).phase | Should -Be 'reconciled'
         }
         It 'executes a compatible same-controller resize without disk-capability changes' {
-            $script:plan = New-VmUpgradePlan (New-FixtureEvidence) -TargetSize Standard_D2s_v6 -Controller SCSI -WorkloadReview (New-FixtureReview)
+            ($script:simulation.skus[1].capabilities | Where-Object name -EQ 'DiskControllerTypes').value = 'SCSI'
+            $script:simulation.guest.nvmeDriver = 'unknown'
+            $script:simulation.guest.nvmeBoot = 'unknown'
+            $script:plan = New-VmUpgradePlan $script:simulation -TargetSize Standard_D2s_v6 -Controller SCSI -WorkloadReview (New-FixtureReview)
             $script:approval = New-FixtureApproval $script:plan
             Write-UpgradeJson $script:plan $script:planPath
             Write-UpgradeJson $script:approval $script:approvalPath
-            (Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false).phase | Should -Be 'reconciled'
+            $journal = Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false
+            $journal.phase | Should -Be 'reconciled'
+            $journal.lastEvidence.vm.storageProfile.diskControllerType | Should -Be 'SCSI'
+            $journal.lastEvidence.disks[0].supportedCapabilities.diskControllerTypes | Should -Be 'SCSI'
             Should -Invoke Invoke-MinimalArmPatch -Times 1 -Exactly
+            Should -Invoke Invoke-MinimalArmPatch -Times 0 -Exactly -ParameterFilter { $Id -match '/disks/' }
         }
         It 'rejects missing MANA use, mismatched data and unproved VF use after start' {
             $live = New-FixtureEvidence

@@ -10,7 +10,7 @@ AzureRM is pinned to 4.48.0; the provider lock file is committed.
 |---|---|
 | PowerShell parsing | All module, customer, guest, fixture and integration scripts passed |
 | Configured static analysis | Module, customer, guest and integration scripts passed |
-| Decision/orchestration tests | 196 Pester tests passed; no failures, skips or unrun tests. Includes wall-clock command bounds, real stalled-child termination and mocked supervisor cleanup, preparation expiry/fresh-power refusal, explicit ARM lab identity success/refusal and legacy IMDS preservation, atomic create/replace, transient/persistent reader locks, read-only failures, unchanged journal phase/intent on publication failure, encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
+| Decision/orchestration tests | 225 Pester tests passed; no failures, skips or unrun tests. Includes wall-clock command bounds, real stalled-child termination and mocked supervisor cleanup, preparation expiry/fresh-power refusal, explicit ARM lab identity success/refusal and legacy IMDS preservation, atomic create/replace, transient/persistent reader locks, read-only failures, unchanged journal phase/intent on publication failure, encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
 | Guest script syntax | Bash syntax and embedded Python AST parsing passed; no guest script executed |
 | Terraform format/validate | Passed |
 | Installed provider schema | Linux/Windows size/controller/host-encryption and NIC acceleration attributes verified |
@@ -519,3 +519,42 @@ and operator cleanup coverage. No sleep/power setting was changed. All paid
 testing remains suspended; this strengthens offline control-flow proof but
 does not establish a live cleanup deadline, same-interface full-cycle success
 or production/owner acceptance.
+
+### SCSI-only target and capacity reservation planning
+
+Non-NVMe target migration uses the implemented same-controller SCSI engine.
+Offline execution now explicitly covers a target advertising **only SCSI**
+with NVMe guest readiness unknown: deallocate/size update/start/verification/
+reconciliation passes, controller remains SCSI, and no disk controller
+capability PATCH occurs. Both same-controller SCSI and eligible SCSI-to-NVMe
+software paths exist; this does not promote same-interface live acceptance
+or imply a generic NVMe-to-SCSI conversion.
+
+Read-only evidence collection follows an associated exact same-subscription
+capacity reservation group/member list and expanded runtime observations.
+Plans/reports expose exact target-size/region/zone/state/unit compatibility,
+unassociated optionality, quota-versus-capacity distinction and concrete
+owner choices for missing target reservations. Association drift remains
+fingerprint-bound, Terraform removal is refused in a size/controller-only
+plan, forced ready associated execution is independently refused, and the
+restore harness refuses associated originals before deallocation/create.
+Compatible associations are **assessment-only**, not hidden permission for
+reservation changes or a new live-tested placement path.
+
+Synthetic regressions cover succeeded zonal/non-zonal matching, exhausted/
+overallocated units, missing target, stale/denied/malformed/out-of-group/
+duplicate evidence, raw contradictory response retention, untouched
+unassociated discovery, reporting without launchers, reservation drift,
+Terraform detachment and recovery refusal. No reservation purchase, creation,
+association, detachment, quantity change or deletion was performed or added.
+
+The standard validation passes **225 Pester tests and six Terraform mocks**;
+the **11 current supervised wrapper tests** also pass. These remain offline
+proof, with external Azure/guest/Terraform responses mocked. Fresh read-only
+Sweden Central usage reported regional cores 0/100, DASv5 cores 0/100 and
+VM count 0/25000 in the approved subscription/context. The attempted bounded
+SKU metadata refresh timed out; no fresh compatibility/capacity guarantee is
+claimed from that attempt. Paid testing remains suspended, with no new
+deployment proposal, settings changes, guest command or mutation replay.
+Fresh execution gates and the reliable-awake-host/operator cleanup prerequisite
+remain mandatory before a separately approved live scope.

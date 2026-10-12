@@ -62,3 +62,87 @@ Quota permission, published SKU/zone availability and actual allocation
 capacity are separate. No paid reservation, quota request or preview
 registration is performed. Allocation can fail after deallocation, and the
 original size may not be available for rollback.
+
+## Non-NVMe targets
+
+For an existing SCSI VM, explicitly select `-Controller SCSI` and a target
+advertising SCSI. The same-controller state machine retains all managed disk
+controller capabilities and does not require NVMe guest boot checks. It still
+requires actual SCSI identity, stable mounts/data, both relevant network
+drivers, health/protection, exact SKU/quota/security/placement checks and
+Terraform reconciliation. Source/target temporary-disk exclusions are
+unchanged. This is an implemented offline-tested path, not accepted live
+same-interface/production coverage. It does not authorize NVMe-to-SCSI
+conversion or another configuration merely because a target uses SCSI.
+
+## Capacity reservations
+
+**A reservation is not required for an unassociated VM.** Quota is permission
+to deploy; capacity is the physical allocation available in the exact region
+and zone. A quota pass or published SKU never proves capacity. An on-demand
+capacity reservation is size/location/quantity-specific, costs money even
+unused, and its creation can itself fail quota/capacity checks. Reserved
+Instances and Savings Plans provide discounts, not physical capacity.
+No reservation is purchased, created, associated, detached, reduced or deleted
+by this toolkit. Quota is still freshly verified before an approved execution;
+an owner's expectation that it is sufficient does not bypass that check.
+
+When ARM reports an existing capacity reservation group association,
+`Get-VmEvidence` follows only that exact same-subscription group and its
+unique member IDs using Compute API `2024-07-01` with `$expand=instanceView`.
+Raw group/member responses are retained before identity/refusal checks when
+`-ObservationPath` is supplied. Denied/missing/contradictory evidence is an
+explicit check, not an assumption of unreserved availability. Shared or
+cross-subscription groups need separate review.
+
+The plan reports group identity/region, zonal-versus-regional compatibility,
+exact target SKU and zone, reservation provisioning/runtime state, configured
+quantity, actual `instanceView.utilizationInfo.currentCapacity` and
+`virtualMachinesAllocated`. A succeeded matching member with observed units
+for this VM is `compatible-observed`, **not** a lock or allocation guarantee.
+Missing target, failed reservation, mismatched placement, exhausted capacity,
+over-allocation or inconsistent runtime evidence yields an actionable
+`incompatible`/`unknown` result. Special placement (availability sets,
+dedicated host, PPG, scale sets, Spot) remains separately blocked.
+
+Quota projection remains conservative: it does not credit unused reserved
+quota or model Azure's exemption for deployment within reserved quantity.
+Associated capacity is not silently subtracted from usage or treated as a
+free target allocation. These paths require owner/provider-specific quota
+and reservation accounting review before any associated execution.
+
+**Associated-VM execution and restoration remain assessment-only**, including
+when observed compatibility passes. A generic single-VM workflow cannot
+silently assume shared reservation/protection semantics. Reports bind the
+association to evidence/plan hashes and suppress upgrade launchers; execution
+also independently refuses a forged ready classification with an association.
+Reservation changes require a separate owner-reviewed plan and consent, not
+an implicit step in resizing.
+
+### Target missing from the associated group
+
+Microsoft documents two choices before resizing: create a matching target
+reservation or remove the association. Creating/increasing a reservation is
+paid/shared scope and may require extra quota; it is not part of current
+authorization. Changing quantity can affect every associated VM and unused
+billing. No alternative group/zone/region is selected automatically.
+
+### Can it be removed while the VM is running?
+
+The documented usual procedure is **deallocate the VM, detach its association,
+then restart if desired**. This introduces downtime and unreserved restart
+capacity risk. Detachment alone does not delete the reservation or stop its
+unused-capacity charge.
+
+Microsoft also documents **set the relevant reserved quantity to zero, then
+detach**, for a VM that cannot be deallocated. This is not a harmless
+running-VM flag toggle: it relinquishes that reservation's protection and can
+affect other associated VMs; restoring quantity later requires capacity/quota
+and might fail. It needs explicit shared-impact, billing, placement,
+protection/recovery and Terraform-owner approval. Do not copy mutation
+commands into a generated action launcher or use this as an automatic fallback.
+
+Public procedures:
+[overview](https://learn.microsoft.com/azure/virtual-machines/capacity-reservation-overview),
+[resize/modify](https://learn.microsoft.com/azure/virtual-machines/capacity-reservation-modify),
+[remove association](https://learn.microsoft.com/azure/virtual-machines/capacity-reservation-remove-vm).

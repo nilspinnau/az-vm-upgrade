@@ -6,6 +6,7 @@ function Assert-UpgradeApproval {
     $unsigned.Remove('hash')
     if ((Get-UpgradeHash $unsigned) -cne $Plan.hash) { throw 'Plan hash mismatch; reassess and reapprove.' }
     if ($Plan.classification -ne 'ready' -or $Plan.executionBoundary -ne 'disposable-lab-only') { throw 'Only ready disposable-lab plans can execute.' }
+    if (Get-Field $Plan.evidence.vm 'capacityReservation') { throw 'Capacity reservation associated execution is assessment-only; no implicit reservation mutation or detachment.' }
     if ([DateTimeOffset]::Parse($Plan.expiresAt) -le [DateTimeOffset]::UtcNow -or
         [DateTimeOffset]::Parse($Approval.expiresAt) -le [DateTimeOffset]::UtcNow) { throw 'Plan or approval expired.' }
     foreach ($name in @('vmId','tenantId','subscriptionId','targetSize','targetController')) {

@@ -19,6 +19,7 @@ There is no production bypass flag. See [support matrix](docs/support-matrix.md)
 | Optional Advisor cross-check | Microsoft's retirement recommendations and metadata; SKU-only/Advisor-only gaps, independent of execution readiness |
 | Evidence | Fresh ARM VM/instance/disk/NIC/SKU/quota reads and explicitly consented, bounded Linux/Windows guest probes |
 | Planning | Explicit target or ranked metadata-compatible candidates; separate quota, capacity, guest capability and actual hardware use |
+| Capacity reservations | Read-only associated group/member/runtime discovery and exact target-size/region/zone/unit assessment; actionable blockers, never automatic purchase/detachment/quantity changes |
 | Customer outputs | JSON evidence/plan, CSV inventory, Markdown guide and safe launchers for ready **lab** plans only |
 | Execution | Exact plan-bound approval, protection, drift/concurrency gates, minimal PATCHes, Azure operation polling, durable journal, post-start validation |
 | Recovery | Conservative resume and recovery guide; no automatic destructive restore, VM deletion or disk formatting |
@@ -33,6 +34,11 @@ ADE/CMK/complex security layouts remain explicit exclusions. Optional Trusted
 Launch assessment is separate, never a hidden part of a SKU migration.
 Disposable integration harnesses can initialize an exact new lab data disk and
 exercise sequential snapshot restoration only under their own explicit scope.
+Both **SCSI-to-SCSI (non-NVMe target)** and SCSI-to-NVMe lab orchestration are
+implemented. A SCSI-only target does not require NVMe boot readiness or an
+OS disk capability change. Same-interface full-cycle live acceptance remains
+unproven; paid tests remain suspended after the documented deadline breach.
+See [capacity reservations and removal choices](docs/planning.md#capacity-reservations).
 
 ## Start with assessment
 
@@ -45,6 +51,11 @@ From the repository root in PowerShell:
 .\scripts\New-VmUpgradePlan.ps1 -VmId '<one-VM-ARM-ID>' `
   -TargetSize 'Standard_D2s_v6' -Controller NVMe `
   -OutputDirectory '.\out\vm-plan'
+
+# Same-controller migration to a non-NVMe target; select a real compatible SKU:
+.\scripts\New-VmUpgradePlan.ps1 -VmId '<one-VM-ARM-ID>' `
+  -TargetSize '<approved-SCSI-capable-target-size>' -Controller SCSI `
+  -OutputDirectory '.\out\scsi-plan'
 ```
 
 The second command **does not invoke guest code** by default. Missing evidence

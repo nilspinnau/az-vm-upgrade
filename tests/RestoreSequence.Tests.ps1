@@ -54,6 +54,7 @@ InModuleScope AzVmUpgrade {
                 param($VmId)
                 $script:reads++
                 $e = $script:restoreEvidence | ConvertTo-Json -Depth 100 | ConvertFrom-Json -AsHashtable -Depth 100
+                if ($script:gate -eq 'capacity-reservation') { $e.vm.capacityReservation=@{capacityReservationGroup=@{id='synthetic-associated-group'}} }
                 if ($VmId -eq $script:recoveryTargets[0]) {
                     if ($script:gate -eq 'restored-guest') { $e.guest.sentinelHash = 'changed' }
                 } elseif ($script:gate -eq 'original-health' -and $script:reads -eq 1) {
@@ -126,6 +127,7 @@ InModuleScope AzVmUpgrade {
             @{ Gate = 'provider'; Observation = 'compute-provider' },
             @{ Gate = 'snapshot'; Observation = 'snapshot' },
             @{ Gate = 'nic'; Observation = 'source-nic' },
+            @{ Gate = 'capacity-reservation'; Observation = 'original' },
             @{ Gate = 'restored-guest'; Observation = 'evidence' },
             @{ Gate = 'original-restart'; Observation = 'original-restart' }
         ) {

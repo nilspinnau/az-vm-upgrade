@@ -243,6 +243,76 @@ function Get-GuestAdvisory {
     return @($items)
 }
 
+function Get-CapacityReservationAssessment {
+    param([Parameter(Mandatory)]$Evidence, [string]$TargetSize)
+    $association = Get-Field $Evidence.vm 'capacityReservation'
+    $id = Get-Field $association 'capacityReservationGroup.id'
+    $result = @{ status='not-associated'; groupId=$id; targetSize=$TargetSize; reservationId=$null
+        availableUnits=$null; detail='No capacity reservation association. Reservation is optional; quota/SKU checks do not guarantee allocation.'
+        action='Do not create or purchase capacity implicitly. Review allocation risk with the owner.' }
+    if (-not $association) { return $result }
+    $result.status = 'unknown'
+    $result.action = 'Preserve the association. Obtain fresh group/member/instance-view evidence; no implicit detach, quantity change, purchase or deletion.'
+    $result.detail = 'Capacity reservation association or evidence is incomplete.'
+    $e = Get-Field $Evidence 'capacityReservationEvidence'
+    if (-not $id -or -not $e -or $e.status -ne 'collected') { return $result }
+    if ($id -notmatch '^/subscriptions/([0-9a-f-]{36})/resourceGroups/[^/]+/providers/Microsoft\.Compute/capacityReservationGroups/[^/]+$' -or
+        $Matches[1] -ine $Evidence.subscriptionId) {
+        $result.detail='Invalid or shared/cross-subscription reservation group identity requires separate review.'; return $result
+    }
+    try { Assert-FreshEvidence $e.observedAt } catch { $result.detail=$_.Exception.Message; return $result }
+    $group = $e.group
+    if ($e.groupId -ine $id -or $group.id -ine $id -or $group.location -ine $Evidence.vm.location) {
+        $result.status='incompatible'; $result.detail='Reservation group identity/region does not match the associated VM.'; return $result
+    }
+    $zones = @($Evidence.vm.zones)
+    $groupZones = @($group.zones | Where-Object { $null -ne $_ })
+    if ($zones.Count -gt 1 -or ($zones.Count -eq 1 -and $zones[0] -notin $groupZones) -or
+        ($zones.Count -eq 0 -and $groupZones.Count -gt 0)) {
+        $result.status='incompatible'; $result.detail='VM and reservation group zonal/regional placement do not match.'; return $result
+    }
+    $references = @($group.properties.capacityReservations)
+    $members = @($e.reservations)
+    if ($null -eq $group.properties.capacityReservations -or $references.Count -ne $members.Count -or @($members | Group-Object id | Where-Object Count -GT 1).Count -or
+        @($references | Group-Object id | Where-Object Count -GT 1).Count -or
+        @($references | Where-Object { -not $_.id -or -not $_.id.StartsWith("$id/capacityReservations/",[StringComparison]::OrdinalIgnoreCase) -or
+            $_.id.Substring($id.Length + '/capacityReservations/'.Length) -match '^$|/' }).Count -or
+        @($members | Where-Object { $_.id -notin @($references.id) }).Count) {
+        $result.detail='Incomplete or duplicate reservation member evidence.'; return $result
+    }
+    $targetReservations = @($members | Where-Object { $_.sku.name -ceq $TargetSize -and
+        (Get-UpgradeHash @($_.zones | Where-Object { $null -ne $_ })) -eq (Get-UpgradeHash $zones) })
+    if (-not $TargetSize) { $result.detail='Select an explicit target before reservation compatibility can be assessed.'; return $result }
+    if ($targetReservations.Count -eq 0) {
+        $result.status='incompatible'; $result.detail='Associated group has no reservation for the exact target size and zone.'
+        $result.action='Owner must separately choose/provision a matching paid target reservation, or approve VM deallocation/detachment and unreserved allocation; update Terraform desired association and reassess. Do not zero a shared reservation automatically.'
+        return $result
+    }
+    if ($targetReservations.Count -ne 1) { $result.detail='Target reservation is ambiguous.'; return $result }
+    $member = $targetReservations[0]
+    $result.reservationId = $member.id
+    $current = Get-Field $member 'properties.instanceView.utilizationInfo.currentCapacity'
+    $allocated = $member.properties.instanceView.utilizationInfo.virtualMachinesAllocated
+    if ($member.location -ine $Evidence.vm.location -or $member.properties.provisioningState -ne 'Succeeded') {
+        $result.status='incompatible'; $result.detail='Target reservation region or provisioning state is not usable.'; return $result
+    }
+    if (($current -isnot [int] -and $current -isnot [long]) -or
+        $current -lt 0 -or $current -gt [int]::MaxValue -or
+        ($member.sku.capacity -isnot [int] -and $member.sku.capacity -isnot [long]) -or $member.sku.capacity -ne $current -or $null -eq $allocated -or
+        @($member.properties.instanceView.statuses | Where-Object code -IEQ 'ProvisioningState/succeeded').Count -ne 1 -or
+        @($allocated | Where-Object { -not $_.id }).Count -or @($allocated | Group-Object id | Where-Object Count -GT 1).Count) {
+        $result.detail='Current reserved capacity/allocation evidence is missing, inconsistent or incomplete.'; return $result
+    }
+    $result.availableUnits = [long]$current - @($allocated | Where-Object { $_.id -ine $Evidence.vm.id }).Count
+    if ($result.availableUnits -lt 1) {
+        $result.status='incompatible'; $result.detail='No observed reserved unit remains for this VM; over-allocation is not reserved capacity.'; return $result
+    }
+    $result.status='compatible-observed'
+    $result.detail='Exact target size/region/zone, succeeded reservation and observed reserved unit match. Availability is a point-in-time observation, not a lock or SLA guarantee from this toolkit.'
+    $result.action='Retain existing association and desired Terraform capacity_reservation_group_id. Associated-VM execution/recovery is assessment-only until separately reviewed and tested; no reservation mutation is generated.'
+    return $result
+}
+
 function New-VmUpgradePlan {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Evidence, [string]$TargetSize,
@@ -265,8 +335,12 @@ function New-VmUpgradePlan {
     $currentController = Get-Field $vm 'storageProfile.diskControllerType'
     if (-not $currentController) { $checks.Add((New-Check 'current-controller' unknown 'Controller is not exposed; do not assume SCSI.')) }
     if (-not $Controller) { $Controller = $currentController }
-    foreach ($placement in @('availabilitySet','virtualMachineScaleSet','proximityPlacementGroup','host','hostGroup','capacityReservation','extendedLocation')) {
+    foreach ($placement in @('availabilitySet','virtualMachineScaleSet','proximityPlacementGroup','host','hostGroup','extendedLocation')) {
         if (Get-Field $vm $placement) { $checks.Add((New-Check "placement:$placement" unsupported 'Special placement needs a reviewed migration; no other VMs will be stopped.')) }
+    }
+    $reservation = Get-CapacityReservationAssessment $Evidence $TargetSize
+    if ($reservation.status -ne 'not-associated') {
+        $checks.Add((New-Check 'capacity-reservation' unsupported "$($reservation.detail) $($reservation.action)" 'ARM / Microsoft capacity reservation guidance'))
     }
     if ($vm.priority -eq 'Spot') { $checks.Add((New-Check 'spot' unsupported 'Spot allocation is not an unattended supported path.')) }
     if (Get-Field $vm 'storageProfile.osDisk.diffDiskSettings') { $checks.Add((New-Check 'ephemeral-os' unsupported 'Ephemeral OS disk requires a rebuild path.')) }
@@ -367,6 +441,7 @@ function New-VmUpgradePlan {
             if ($iac.check.status -ne 'pass') { $checks.Add((New-Check 'terraform' unsupported $iac.check.detail)) }
         }
         $iac.suggestions = @("Set $($TerraformMapping.vmAddress).size = $TargetSize", "Set $($TerraformMapping.vmAddress).disk_controller_type = $Controller", 'Preserve NIC properties; no ignore_changes is generated.')
+        if ($reservation.groupId) { $iac.suggestions += "Preserve $($TerraformMapping.vmAddress).capacity_reservation_group_id = $($reservation.groupId); association changes need separate owner approval and plan." }
         if ((Get-Field $vm 'securityProfile.encryptionAtHost') -eq $true) {
             $iac.suggestions += "Retain $($TerraformMapping.vmAddress).encryption_at_host_enabled = true"
         }
@@ -387,7 +462,7 @@ function New-VmUpgradePlan {
         targetController = if ($Controller) { $Controller } else { $null }
         classification = $classification
         executionBoundary = 'disposable-lab-only'; checks = @($checks); advisories = $advisories; candidates = $candidates
-        quota = $quotaResult; capacity = $Evidence.capacity; terraform = $iac
+        quota = $quotaResult; capacity = $Evidence.capacity; capacityReservation = $reservation; terraform = $iac
         workloadReview = $WorkloadReview; fingerprint = $Evidence.fingerprint
         evidence = $Evidence; hash = $null
         disruption = 'Single VM deallocate/update/start; downtime and loss of temporary storage. Original allocation cannot be guaranteed.'

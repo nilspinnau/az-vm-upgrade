@@ -79,6 +79,22 @@ overlapping AzAPI/AzureRM ownership of the same property. This implementation
 generates **no lifecycle exclusion**. If a customer provider cannot represent
 the target/controller or reconcile cleanly, the path is unsupported for
 unattended IaC use until separately resolved. Narrow temporary exclusions, if
+
+## Capacity reservation ownership
+
+Preserve the VM's owner-managed `capacity_reservation_group_id` when associated.
+The toolkit reads associated group/member/runtime evidence and reports target
+compatibility, but associated execution/recovery remains blocked. Its existing
+exact before/after comparison rejects association removal or changes hidden in
+a size/controller maintenance plan. The VM association also participates in
+configuration/protection-model fingerprints and journal drift gates.
+
+If the owner chooses a different reservation or detachment, update desired
+HCL in a **separate explicitly approved** change plan, including the
+owner-managed reservation quantity/resource where applicable. Review all
+affected VMs and retained capacity billing; then recollect evidence. No
+reservation lifecycle exclusion, automatic association patch, state edit,
+hidden quantity-zero operation or cleanup of a shared reservation is generated. Narrow temporary exclusions, if
 ever justified elsewhere, need explicit scope, expiry and removal evidence.
 
 Protect state, even marked-sensitive attributes: a Windows password still
