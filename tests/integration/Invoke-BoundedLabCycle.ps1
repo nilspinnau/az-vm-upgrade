@@ -16,6 +16,14 @@ if ($SubscriptionId -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-
 if ($CleanupDeadline -le [DateTimeOffset]::UtcNow.AddMinutes(45) -or $CleanupDeadline -gt [DateTimeOffset]::UtcNow.AddHours(4)) { throw 'Bounded deadline and 45-minute reserve required.' }
 if (Test-Path $OutputPath) { throw 'Never replay a supervisor result.' }
 $wrapper = (Resolve-Path -LiteralPath $WrapperPath).Path
+$wrapperText = Get-Content -LiteralPath $wrapper -Raw
+$declaredSubscription = [regex]::Matches($wrapperText, "(?m)^\`$sub='([^']+)'")
+$declaredGroup = [regex]::Matches($wrapperText, "(?m)^\`$rg='([^']+)'")
+if ($declaredSubscription.Count -ne 1 -or $declaredGroup.Count -ne 1 -or
+    $declaredSubscription[0].Groups[1].Value -ine $SubscriptionId -or
+    $declaredGroup[0].Groups[1].Value -ine $TestResourceGroup) {
+    throw 'Reviewed wrapper scope declarations must match the exact supervised subscription and cleanup group.'
+}
 Import-Module (Join-Path $PSScriptRoot '..\..\src\AzVmUpgrade.psd1') -Force
 & (Get-Module AzVmUpgrade) {
     param($wrapper,$SubscriptionId,$TestResourceGroup,$Location,$CleanupDeadline,$OutputPath)
@@ -80,6 +88,7 @@ Import-Module (Join-Path $PSScriptRoot '..\..\src\AzVmUpgrade.psd1') -Force
                 $result.cleanup = 'pass'
             } else { $result.cleanup = 'not-started' }
         } catch {
+            $result.status = 'failed'
             $result.cleanup = 'unverified'; $result.cleanupError = $_.Exception.Message
             throw "Exact cleanup is unverified; immediate operator intervention required: $($_.Exception.Message)"
         } finally {

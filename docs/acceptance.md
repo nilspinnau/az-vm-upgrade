@@ -10,7 +10,7 @@ AzureRM is pinned to 4.48.0; the provider lock file is committed.
 |---|---|
 | PowerShell parsing | All module, customer, guest, fixture and integration scripts passed |
 | Configured static analysis | Module, customer, guest and integration scripts passed |
-| Decision/orchestration tests | 193 Pester tests passed; no failures, skips or unrun tests. Includes wall-clock command bounds, real stalled-child termination and mocked supervisor cleanup, preparation expiry/fresh-power refusal, explicit ARM lab identity success/refusal and legacy IMDS preservation, atomic create/replace, transient/persistent reader locks, read-only failures, unchanged journal phase/intent on publication failure, encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
+| Decision/orchestration tests | 196 Pester tests passed; no failures, skips or unrun tests. Includes wall-clock command bounds, real stalled-child termination and mocked supervisor cleanup, preparation expiry/fresh-power refusal, explicit ARM lab identity success/refusal and legacy IMDS preservation, atomic create/replace, transient/persistent reader locks, read-only failures, unchanged journal phase/intent on publication failure, encryption-at-host/security drift, real Run Command response shapes, SCSI LUN identity, built-in/compressed NVMe boot drivers, consent-bound connectivity, restoration evidence/gates, rejected-validation evidence persistence, and exact live-support catalog scope. Upstream catalog hashes verified against locally fetched copies |
 | Guest script syntax | Bash syntax and embedded Python AST parsing passed; no guest script executed |
 | Terraform format/validate | Passed |
 | Installed provider schema | Linux/Windows size/controller/host-encryption and NIC acceleration attributes verified |
@@ -456,10 +456,11 @@ It cannot run through host suspension/shutdown; see [operational limits](testing
 Offline proof comprises **193 Pester tests and six Terraform mocks**,
 including real local stalled processes with mocked cloud cleanup, overdue
 resume handling, ownership refusal and cleanup-poll timeout. Four existing
-whole-wrapper mocks passed using the compatible resize-07 wrapper with
-both legacy and spliced ARM-helper initialization. That fixture rejects the
-resize-08 wrapper's changed explicit-helper call shape before execution;
-it is not claimed as unchanged resize-08 whole-program proof.
+whole-wrapper mocks initially passed using the compatible resize-07 wrapper with
+both legacy and spliced ARM-helper initialization. That fixture initially
+rejected the resize-08 wrapper's changed explicit-helper call shape before
+execution. At that checkpoint this was not current resize-08 whole-program proof;
+the non-paid coverage extension below addresses that specific fixture gap.
 No live mutation was replayed to validate these fixes.
 
 For the actual source-only VM plus two disks, conservatively using **eight
@@ -481,3 +482,40 @@ owner acceptance remain unresolved. An awake, reliable execution/cleanup
 environment must be established before any future paid-test decision.
 Windows, other distributions, module-staged drivers and production support
 are not expanded.
+
+### Current-wrapper supervised offline coverage extension
+
+The reviewed whole-wrapper fixture now recognizes exactly the current
+explicit helper invocation, preserving its consent arguments, and redirects
+only that command to the actual initialization-helper body in the synthetic
+module scope. Unknown, consent-altered and duplicate shapes refuse before
+external operations. The retained resize-08 wrapper and its original
+evidence were not edited or replayed against Azure.
+
+The optional runner passes **11 top-level tests** on that current wrapper,
+including **six real separate PowerShell children** supervised by the actual
+parent body and bounded process adapter. Cases cover full mocked success
+through preparation/resize/recovery/final no-op/cleanup, synthetic IMDS
+contradiction with failed identity journal retained, evidence-collection
+hang terminated at reserve with parent exact cleanup, actual deadline
+refusal, failed durable baseline publication with no preparation/upgrade
+promotion, and child plus parent cleanup timeout. Synthetic child failures
+are expected and asserted by the parent; these are not failed live runs.
+Nested preparation/recovery, guest responses, Azure and Terraform remain
+mocked; the guest identity validator has separate standard regressions.
+
+The timeout case retains the worker's historical `completed` technical-cycle
+status plus `cleanupError`, without relabeling that original wrapper behavior
+as overall success. The authoritative supervisor journal is `failed` with
+cleanup `unverified`. Three standard entrypoint regressions additionally
+reject mismatched/unknown literal wrapper scope before launching a process.
+The standard suite passes **196 Pester tests and six Terraform mocks**.
+Legacy wrapper compatibility retains five direct mocked tests, not current
+separate-worker evidence.
+
+The intended lab procedure now requires the supervised entrypoint rather
+than direct wrapper execution and explicitly requires an awake/reliable host
+and operator cleanup coverage. No sleep/power setting was changed. All paid
+testing remains suspended; this strengthens offline control-flow proof but
+does not establish a live cleanup deadline, same-interface full-cycle success
+or production/owner acceptance.

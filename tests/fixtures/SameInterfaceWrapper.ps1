@@ -1,7 +1,13 @@
-param([Parameter(Mandatory)][string]$WrapperPath)
+param([Parameter(Mandatory)][string]$WrapperPath, [string]$Scenario, [string]$SharedScopePath)
 Import-Module (Join-Path $PSScriptRoot '..\..\src\AzVmUpgrade.psd1') -Force
 BeforeAll {
-    & (Get-Module AzVmUpgrade) { param($Path) $script:wrapperText = Get-Content $Path -Raw } $WrapperPath
+    & (Get-Module AzVmUpgrade) {
+        param($Path,$Scenario,$SharedScopePath)
+        $script:wrapperText = Get-Content $Path -Raw
+        $script:currentWrapperPath = $Path
+        $script:workerScenario = $Scenario
+        $script:sharedScopePath = $SharedScopePath
+    } $WrapperPath $Scenario $SharedScopePath
 }
 InModuleScope AzVmUpgrade {
     Describe 'Private same-interface wrapper as one program, offline' {
@@ -23,17 +29,38 @@ InModuleScope AzVmUpgrade {
                 & $script:initBody $VmId $DiskId $TestResourceGroup $ExpiresAt $OutputPath $IdentityMode $LiveTestConsent.IsPresent $ArmUdevIdentityConsent.IsPresent $ExclusiveWindowConsent.IsPresent
             }
             $pattern = '(?s)& \(Get-Module AzVmUpgrade\) \{\s*param\(\$vmId,\$diskId,\$out,\$sub\).*?\} \$vmId \$o\.data_disk_id\.value \$out \$sub'
-            if ([regex]::Matches($script:wrapperText, $pattern).Count -ne 1) { throw 'Unsupported initialization block; do not infer replacement scope' }
+            $explicitCall = '.\tests\integration\Invoke-LabDiskInitialization.ps1 -VmId $vmId -DiskId $o.data_disk_id.value -TestResourceGroup $rg -ExpiresAt $reserve -IdentityMode arm-azure-udev -LiveTestConsent -ArmUdevIdentityConsent -ExclusiveWindowConsent -OutputPath "$out\resize-initialization-journal.json"'
+            $legacyCount = [regex]::Matches($script:wrapperText, $pattern).Count
+            $explicitCount = [regex]::Matches($script:wrapperText, [regex]::Escape($explicitCall)).Count
+            $script:initializationPattern = $pattern
+            $script:explicitInitializationCall = $explicitCall
+            function Assert-OfflineInitializationShape {
+                param($Text)
+                $legacy = [regex]::Matches($Text,$script:initializationPattern).Count
+                $exact = [regex]::Matches($Text,[regex]::Escape($script:explicitInitializationCall)).Count
+                $helpers = [regex]::Matches($Text,'Invoke-LabDiskInitialization\.ps1\b').Count
+                if (-not (($legacy -eq 1 -and $exact -eq 0 -and $helpers -eq 0) -or
+                    ($legacy -eq 0 -and $exact -eq 1 -and $helpers -eq 1))) {
+                    throw 'Unsupported initialization block; do not infer replacement scope'
+                }
+            }
+            Assert-OfflineInitializationShape $script:wrapperText
+            if ($legacyCount -eq 1 -and $explicitCount -eq 0) {
             $replacement = @'
 $result.identityMode='arm-azure-udev'
     Write-UpgradeJson $result "$out\resize-cycle.json"
     Invoke-OfflineLabInitialization -VmId $vmId -DiskId $o.data_disk_id.value -TestResourceGroup $rg -ExpiresAt $reserve -IdentityMode arm-azure-udev -LiveTestConsent -ArmUdevIdentityConsent -ExclusiveWindowConsent -OutputPath "$out\resize-initialization-journal.json"
 '@
             $script:armWrapper = [scriptblock]::Create([regex]::Replace($script:wrapperText, $pattern, [Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement }))
+            } elseif ($legacyCount -eq 0 -and $explicitCount -eq 1) {
+                $script:armWrapper = [scriptblock]::Create($script:wrapperText.Replace($explicitCall, $explicitCall.Replace('.\tests\integration\Invoke-LabDiskInitialization.ps1', 'Invoke-OfflineLabInitialization')))
+                $script:wrapper = $script:armWrapper
+            } else { throw 'Unsupported initialization block; do not infer replacement scope' }
+            $script:explicitWrapper = $explicitCount -eq 1
         }
         BeforeEach {
             $script:identityRefused = $false
-            $script:useArmMode = $false
+            $script:useArmMode = $script:explicitWrapper
             $script:exists = $false
             $script:deleted = $false
             $script:guestCalls = 0
@@ -42,7 +69,8 @@ $result.identityMode='arm-azure-udev'
             $script:vm = "/subscriptions/$script:sub/resourceGroups/$script:group/providers/Microsoft.Compute/virtualMachines/testvm"
             $script:disk = "/subscriptions/$script:sub/resourceGroups/$script:group/providers/Microsoft.Compute/disks/testvm-sentinel"
             $script:os = "/subscriptions/$script:sub/resourceGroups/$script:group/providers/Microsoft.Compute/disks/os"
-            $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            $rootParent = if ($script:sharedScopePath) { Split-Path $script:sharedScopePath -Parent } else { $TestDrive }
+            $root = Join-Path $rootParent ([guid]::NewGuid().ToString('N'))
             foreach ($dir in @($script:wrapperOutput,'infra\test-vm','tests\integration','guest','src')) {
                 [IO.Directory]::CreateDirectory((Join-Path $root $dir)) | Out-Null
             }
@@ -80,18 +108,36 @@ Write-UpgradeJson @{status='restoration-verified';synthetic=$true} $OutputPath
                     @{productName='Standard SSD Managed Disks';skuName='E6 LRS';meterName='E6 LRS Disk';unitPrice=4.8},
                     @{productName='Standard SSD Managed Disks';skuName='E2 LRS';meterName='E2 LRS Disk';unitPrice=.6},
                     @{productName='Standard HDD Managed Disks';skuName='Snapshots LRS';meterName='LRS Snapshots';unitPrice=.05},
+                    @{productName='Standard SSD Managed Disks';skuName='Snapshots LRS';meterName='Snapshots LRS Snapshots';unitPrice=.145},
                     @{productName='Standard SSD Managed Disks';skuName='Disk Transactions LRS';meterName='Disk Transactions LRS Disk Operations';unitPrice=.0026}) }
             }
             Mock terraform {
                 $global:LASTEXITCODE = 0
                 $argsText = $args -join ' '
-                if ($argsText -match 'apply') { $script:exists = $true; return }
+                if ($argsText -match 'apply') {
+                    $script:exists = $true
+                    if ($script:sharedScopePath) { Write-UpgradeJson @{exists=$true} $script:sharedScopePath }
+                    return
+                }
                 if ($argsText -match 'output') {
                     return (@{vm_id=@{value=$script:vm};data_disk_id=@{value=$script:disk}} | ConvertTo-Json -Depth 6)
                 }
                 if ($argsText -match 'show') { return '{"resource_changes":[]}' }
             }
-            Mock Get-VmEvidence { $script:syntheticEvidence }
+            Mock Get-VmEvidence {
+                if ($script:workerScenario -eq 'stall') {
+                    Write-UpgradeJson @{exists=$true;stage='evidence-collection'} $script:sharedScopePath
+                    Start-Sleep -Seconds 60
+                }
+                if ($script:workerScenario -eq 'reserve') {
+                    $env:AZVM_LAB_WORK_DEADLINE = [DateTimeOffset]::UtcNow.AddSeconds(-1).ToString('o')
+                    Assert-LabWorkDeadline
+                }
+                $script:syntheticEvidence
+            }
+            Mock Write-UpgradeJson {
+                throw 'Synthetic durable evidence publication failed; no phase promotion'
+            } -ParameterFilter { $script:workerScenario -eq 'journal' -and $Path -like '*resize-baseline.json' }
             Mock New-VmUpgradePlan { @{} + $script:syntheticPlan }
             Mock New-GuestPreparationPlan { @{ hash = 'b' * 64 } }
             Mock Invoke-VmUpgrade {
@@ -120,8 +166,16 @@ Write-UpgradeJson @{status='restoration-verified';synthetic=$true} $OutputPath
                     'account:show' { return @{ id=$script:sub } }
                     'group:exists' { return $script:exists }
                     'group:show' { return @{name=$script:group;location='swedencentral';tags=@{'az-vm-upgrade-disposable'='true'}} }
-                    'group:delete' { $script:exists=$false;$script:deleted=$true;return }
-                    'resource:list' { return @() }
+                    'group:delete' {
+                        if ($script:workerScenario -eq 'cleanup') { throw 'Synthetic cleanup timeout' }
+                        $script:exists=$false;$script:deleted=$true
+                        if ($script:sharedScopePath) { Write-UpgradeJson @{exists=$false} $script:sharedScopePath }
+                        return
+                    }
+                    'resource:list' {
+                        if ('-g' -in $Arguments) { return @(@{id='synthetic';resourceGroup=$script:group}) }
+                        return @()
+                    }
                     'snapshot:create' { return @{id=($script:vm -replace '/virtualMachines/.*$', '/snapshots/synthetic')} }
                     'vm:run-command' {
                         $script:guestCalls++
@@ -160,7 +214,10 @@ Write-UpgradeJson @{status='restoration-verified';synthetic=$true} $OutputPath
             $r.steps.Count | Should -Be 1
             $script:deleted | Should -BeTrue
             Should -Invoke Invoke-VmUpgrade -Times 0 -Exactly
-            (Read-UpgradeJson (Join-Path $script:out 'resize-initialize-result.json')).value[0].message |
+            $observation = if ($script:explicitWrapper) {
+                (Read-UpgradeJson (Join-Path $script:out 'resize-initialization-journal.json')).observations.initialization
+            } else { Read-UpgradeJson (Join-Path $script:out 'resize-initialize-result.json') }
+            $observation.value[0].message |
                 Should -Match 'Exact managed disk identity'
         }
         It 'runs explicit ARM-mode helper through full mocked cycle and exact cleanup' {
@@ -193,6 +250,31 @@ Write-UpgradeJson @{status='restoration-verified';synthetic=$true} $OutputPath
             $j.observations.initialization.value[0].message | Should -Match 'synthetic-wrong-disk'
             $script:deleted | Should -BeTrue
             Should -Invoke Invoke-VmUpgrade -Times 0 -Exactly
+        }
+        It 'refuses unknown, consent-altered and duplicate initialization shapes before execution' {
+            $call = $script:explicitInitializationCall
+            foreach ($text in @(
+                $call.Replace('-ExclusiveWindowConsent',''),
+                $call.Replace('arm-azure-udev','unknown-mode'),
+                "$call`n$call"
+            )) {
+                { Assert-OfflineInitializationShape $text } | Should -Throw '*Unsupported initialization block*'
+            }
+            Should -Invoke Invoke-UpgradeAz -Times 0 -Exactly
+        }
+        It 'executes the actual current wrapper inside the supervised synthetic child' -Tag WorkerChild {
+            if (-not $script:explicitWrapper -or -not $script:workerScenario -or -not $script:sharedScopePath) { throw 'Explicit reviewed wrapper and synthetic child scope required' }
+            $script:identityRefused = $script:workerScenario -eq 'contradiction'
+            try { & $script:wrapper }
+            finally {
+                Copy-Item (Join-Path $script:out 'resize-cycle.json') "$script:sharedScopePath.cycle.json" -ErrorAction Stop
+                $journal = Join-Path $script:out 'resize-initialization-journal.json'
+                if (Test-Path $journal) { Copy-Item $journal "$script:sharedScopePath.initialization.json" }
+                Write-UpgradeJson @{
+                    baselineExists=Test-Path (Join-Path $script:out 'resize-baseline.json')
+                    preparationExists=Test-Path (Join-Path $script:out 'resize-preparation.json')
+                } "$script:sharedScopePath.stages.json"
+            }
         }
     }
 }

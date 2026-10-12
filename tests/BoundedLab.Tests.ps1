@@ -126,5 +126,16 @@ InModuleScope AzVmUpgrade {
             $script:deleted | Should -BeTrue
             $script:exists | Should -BeTrue
         }
+        It 'refuses mismatched or unknown wrapper scope before any external command' -ForEach @(
+            @{Declaration="`$sub='00000000-0000-0000-0000-000000000001'`n`$rg='azvm-upgrade-lab-offline'"},
+            @{Declaration="`$sub='00000000-0000-0000-0000-000000000000'`n`$rg='azvm-upgrade-lab-unapproved'"},
+            @{Declaration="`$sub=Get-Content 'unknown';`$rg='azvm-upgrade-lab-offline'"}
+        ) {
+            $wrapperPath = Join-Path $TestDrive 'unknown-wrapper.ps1'
+            [IO.File]::WriteAllText($wrapperPath,$Declaration)
+            { & (Join-Path $script:RepositoryRoot 'tests\integration\Invoke-BoundedLabCycle.ps1') -WrapperPath $wrapperPath -SubscriptionId $script:sub -TestResourceGroup $script:rg -Location swedencentral -CleanupDeadline ([DateTimeOffset]::UtcNow.AddHours(1)) -OutputPath "$script:output.refused" -LiveTestConsent -CleanupConsent } | Should -Throw '*scope declarations*'
+            Should -Invoke Invoke-UpgradeProcess -Times 0 -Exactly
+            Should -Invoke Invoke-UpgradeAz -Times 0 -Exactly
+        }
     }
 }

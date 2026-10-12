@@ -10,12 +10,38 @@ breach. The historical commands below are procedures, not permission to run.**
 
 ## Bounded lab worker supervision
 
-`tests/integration/Invoke-BoundedLabCycle.ps1` is an opt-in parent for an
+`tests/integration/Invoke-BoundedLabCycle.ps1` is the required entrypoint for an
 exact reviewed lab wrapper, not a deployment generator or spending approval.
 It requires distinct paid-wrapper and exact cleanup consent, a fresh result
 path, absent exact group, correct subscription, a deadline within four hours
 and a 45-minute reserve. The reviewed wrapper still owns image, resources,
 identity method, formatting consent, cost and execution gates.
+
+Do not launch the reviewed full-cycle wrapper directly. Its inner finally
+block is not a substitute for independent parent cleanup when the worker
+hangs or reaches reserve. Before any future separately authorized run, the
+reviewed wrapper's single literal `$sub`/`$rg` declarations must match the
+supervisor arguments. Dynamic, missing, duplicate or mismatched scope
+declarations are refused before external commands. Human review still
+checks the complete wrapper's resources/actions; these declarations are not
+a sandbox or authorization for arbitrary scripts.
+
+The following is a **procedure template only**, not a paid proposal or
+permission. Paid testing remains suspended:
+
+```powershell
+$ProjectsRoot = (Resolve-Path '..\..').Path
+$env:AZURE_CONFIG_DIR = Join-Path $ProjectsRoot '.azure'
+# Only after separate exact approval and host/cleanup prerequisites:
+.\tests\integration\Invoke-BoundedLabCycle.ps1 `
+  -WrapperPath '<reviewed-private-full-cycle-wrapper.ps1>' `
+  -SubscriptionId '<exact-approved-subscription>' `
+  -TestResourceGroup '<fresh-approved-azvm-upgrade-lab-group>' `
+  -Location '<exact-approved-region>' `
+  -CleanupDeadline '<approved-UTC-deadline-within-four-hours>' `
+  -OutputPath '<fresh-protected-supervisor-journal.json>' `
+  -LiveTestConsent -CleanupConsent
+```
 
 The parent starts the wrapper in a separate PowerShell process and stops
 that entire process tree at reserve, even if a Terraform or other child
@@ -39,7 +65,9 @@ exact cleanup within a 15-minute emergency grace, not renewed lab work.
 **A local supervisor cannot guarantee cleanup during host sleep, shutdown,
 process termination or loss of cloud access.** Both processes stop executing
 when the host suspends. Future paid testing needs an agreed awake/reliable
-host and operator cleanup coverage; externally hosted cleanup would require
+host and operator cleanup coverage. Confirm these prerequisites before a
+future start; this toolkit does not disable sleep or change power settings.
+Externally hosted cleanup would require
 separate design/scope approval and has not been deployed. No unattended
 deadline or hard invoice guarantee is claimed.
 
@@ -316,26 +344,38 @@ It does not call guest code or Azure. Offline mocks are never labeled live succe
 | Exact group teardown | Prior lab failure finalizers independently verified absent groups; recovery offline ordering prohibits original start before marked-resource cleanup | Future paid scope must again prove exact group absence |
 
 The standard suite provides **component control-flow proof**. The optional
-runner below additionally executes the unchanged private same-interface
-wrapper as one program, in an isolated synthetic checkout with all Azure,
-Terraform, guest and nested-harness boundaries mocked:
+runner below additionally executes the reviewed private same-interface
+wrapper with its exact current explicit initialization call in an isolated
+synthetic checkout with all Azure, Terraform, guest and nested-harness
+boundaries mocked, both directly and in real supervised PowerShell children:
 
 ```powershell
 .\scripts\Test-SameInterfaceWrapperOffline.ps1 -WrapperPath '<reviewed-private-wrapper.ps1>'
 ```
 
-Four separately run tests cover legacy success/refusal and explicit
-ARM-mode success/refusal through final no-op or early-stop exact cleanup.
+Eleven separately run tests cover full success, initial contradiction
+refusal, and unknown/consent-altered/duplicate initialization-shape refusal,
+plus six real supervised child cases: full success through final no-op,
+IMDS contradiction, a 60-second stalled evidence collector terminated at
+reserve, actual lab-deadline refusal, durable evidence-publication failure,
+and worker plus parent cleanup timeout. Failed initialization observations
+remain retained; failed baseline writes never produce a preparation/upgrade
+phase. Cleanup failures remain unverified even if the worker completed its
+technical cycle. Exact cleanup ownership is still checked by the parent.
 The runner targets the reviewed wrapper's scope declarations and derives its
 isolated output directory from the exact `$out=(Resolve-Path ...).Path`
 declaration, never a general arbitrary script runner.
-The two new tests replace only the reviewed initialization block with the
-actual initialization-helper body and explicit mode/journal binding; they
-do not claim to run an unchanged future paid wrapper. All cloud/guest
-responses remain synthetic. The runner supplies nested preparation/recovery stubs; their actual bodies are
+Only the exact recognized explicit-helper invocation is redirected to the
+actual helper body in module scope so mocks remain effective. Unknown
+invocations fail before execution. In supervised cases the process-launch
+boundary starts a real child Pester worker executing that same reviewed
+wrapper, rather than a synthetic sleep-only substitute; the actual
+supervisor body and command deadline/termination helper run in the parent.
+Legacy initialization-block wrappers retain five direct mocks, but are not
+used for the six current-helper supervision cases.
+All cloud/guest responses remain synthetic. The runner supplies nested preparation/recovery stubs; their actual bodies are
 covered separately by the standard tests. No real formatting or deployment
-occurs. Empty mocked inventory also exercises explicit inventory-publication
-failure without preventing exact cleanup. This is orchestration proof, not
+occurs. This is orchestration proof, not
 guest or cloud acceptance. CLI transport failures with no response remain
 exceptions, not fabricated observations. Offline tests cannot establish Azure
 allocation, metadata propagation, billing or production support.
