@@ -18,11 +18,7 @@ $result = & (Get-Module AzVmUpgrade) {
     param($SubscriptionId,$Location,$SourceSize,$TargetSize,$ImageUrn,$Zone,$EstimatedHourlyCost,$BudgetLimit,$MaximumHours,$MonthlyBudgetLimit,$CostSafetyReserve,$EncryptionAtHost)
     $account = Invoke-UpgradeAz @('account','show','--subscription',$SubscriptionId)
     if ($account.id -ne $SubscriptionId -or $account.environmentName -ne 'AzureCloud') { throw 'Unexpected subscription/cloud context.' }
-    $costBody = @{ type = 'ActualCost'; timeframe = 'MonthToDate'; dataset = @{
-        granularity = 'None'; aggregation = @{ totalCost = @{ name = 'PreTaxCost'; function = 'Sum' } }
-    } } | ConvertTo-Json -Depth 10 -Compress
-    $cost = Invoke-UpgradeAz @('rest','--subscription',$SubscriptionId,'--method','post',
-        '--url',"https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.CostManagement/query?api-version=2025-03-01",'--body',$costBody)
+    $cost = Get-LabMonthToDateCost $SubscriptionId
     if ($cost.properties.nextLink -or @($cost.properties.rows).Count -ne 1) { throw 'Missing or ambiguous month-to-date cost/headroom.' }
     $columns = @($cost.properties.columns.name)
     $amountIndex = [array]::IndexOf($columns,'PreTaxCost')

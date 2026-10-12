@@ -5,6 +5,15 @@ utility, customer material or SAP project implementation is bundled.
 
 Native resize additions reviewed 2026-10-12:
 
+- https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/manage-automation
+  documents Query API throttling and the QPU retry-after header, plus delayed
+  telemetry and avoiding repeated queries.
+  https://learn.microsoft.com/en-us/microsoft-cloud/dev/dev-proxy/concepts/retry-after-header
+  documents finite exponential backoff/jitter when retry headers are missing.
+  The lab preflight retries only its fixed read-only ActualCost query on
+  recognized CLI 429 shapes; never ARM mutations, unknown failures or stale
+  cost results. CLI stderr may omit HTTP headers; absence is not represented
+  as a server-provided retry interval.
 - https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dasv5-series
   describes Dasv5 sizes/features but does not establish an explicit remote
   controller capability. https://learn.microsoft.com/en-us/azure/virtual-machines/nvme-overview

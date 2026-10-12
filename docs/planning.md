@@ -264,3 +264,16 @@ implemented and independently proved. The alternative is an explicitly
 planned pinned Gen2-image workload rebuild with state/configuration/licenses,
 data/NIC/IP ownership, cutover and tested restore. Neither path is smuggled
 into a size PATCH or inferred from image tags.
+
+## Lab cost-query throttling
+
+Lab preflight uses a fixed subscription-scoped month-to-date ActualCost query.
+Recognized HTTP429 CLI responses get at most three total attempts inside five
+minutes, also bounded by the supervisor's work/reserve deadline. Each external
+query waits at most 90 seconds. Backoff is 60 then 120 seconds plus small
+jitter; any exposed longer numeric Cost Management retry-after is honored,
+or refused if it exceeds the bounded window. Azure CLI may omit headers, so
+headerless waits are explicit backoff, not claimed service instructions.
+Failures and retries are surfaced, reserve is checked during waits, and there
+is no stale-cost fallback or generic cloud mutation replay. Exhaustion stops
+the lab. Budget telemetry is delayed and never a hard spending cap.

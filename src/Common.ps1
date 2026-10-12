@@ -225,6 +225,55 @@ function Invoke-ArmRead {
     Invoke-UpgradeAz @('rest','--method','get','--subscription',$Matches[1],'--url',"$Id`?api-version=$ApiVersion")
 }
 
+function Wait-LabCostRetry {
+    param([ValidateRange(1,180)][int]$Seconds)
+    $waitUntil=[DateTimeOffset]::UtcNow.AddSeconds($Seconds)
+    while ([DateTimeOffset]::UtcNow -lt $waitUntil) {
+        Assert-LabWorkDeadline
+        Start-Sleep -Milliseconds ([int][Math]::Max(1,[Math]::Min(1000,[Math]::Ceiling(($waitUntil-[DateTimeOffset]::UtcNow).TotalMilliseconds))))
+    }
+}
+
+function Get-LabMonthToDateCost {
+    param([Parameter(Mandatory)][guid]$SubscriptionId)
+    $body = @{ type='ActualCost'; timeframe='MonthToDate'; dataset=@{
+        granularity='None'; aggregation=@{totalCost=@{name='PreTaxCost';function='Sum'}}
+    }} | ConvertTo-Json -Depth 10 -Compress
+    $deadline = [DateTimeOffset]::UtcNow.AddMinutes(5)
+    if ($env:AZVM_LAB_WORK_DEADLINE) {
+        $work = [DateTimeOffset]::Parse($env:AZVM_LAB_WORK_DEADLINE)
+        if ($work -lt $deadline) { $deadline=$work }
+    }
+    for ($attempt=1; $attempt -le 3; $attempt++) {
+        Assert-LabWorkDeadline
+        $remaining=[Math]::Floor(($deadline-[DateTimeOffset]::UtcNow).TotalSeconds)
+        if ($remaining -lt 1) { throw 'Cost query retry deadline reached; no stale cost fallback is allowed.' }
+        try {
+            return Invoke-UpgradeAz @('rest','--subscription',$SubscriptionId.ToString(),'--method','post',
+                '--url',"https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.CostManagement/query?api-version=2025-03-01",
+                '--body',$body) -TimeoutSeconds ([int][Math]::Min(90,$remaining))
+        } catch {
+            # This fixed query is read-only despite POST; no generic ARM operation is retried.
+            $message=$_.Exception.Message
+            $throttled=$message -match '(?m)^Azure CLI failed \([0-9]+\):\s*ERROR:\s*\((429|TooManyRequests)\)'
+            $errorBody=[regex]::Match($message,'^Azure CLI failed \([0-9]+\):\s*ERROR: Too Many Requests\((\{.*\})\)\s*$',[Text.RegularExpressions.RegexOptions]::Singleline)
+            if ($errorBody.Success) {
+                try { $throttled=($errorBody.Groups[1].Value | ConvertFrom-Json -AsHashtable -ErrorAction Stop).error.code -ceq '429' }
+                catch { $throttled=$false }
+            }
+            if ($attempt -eq 3 -or -not $throttled) { throw }
+            $delay=[int](60 * [Math]::Pow(2,$attempt-1)) + (Get-Random -Minimum 0 -Maximum 6)
+            $retryAfter=[regex]::Matches($message,'(?im)(?:x-ms-ratelimit-microsoft\.costmanagement-[a-z-]*retry-after|Retry-After)\s*[:=]\s*([0-9]+)')
+            foreach ($header in $retryAfter) { $delay=[Math]::Max($delay,[double]$header.Groups[1].Value) }
+            if ($delay -gt 180 -or [DateTimeOffset]::UtcNow.AddSeconds($delay+1) -ge $deadline) {
+                throw 'Cost query throttle wait exceeds bounded deadline; no retry or stale cost fallback is allowed.'
+            }
+            Write-Warning "Cost query throttled; read-only retry $($attempt+1)/3 after $delay seconds. Azure CLI may not expose response headers; exponential backoff is used when absent."
+            Wait-LabCostRetry -Seconds $delay
+        }
+    }
+}
+
 function Get-ConfigurationFingerprint {
     param($Evidence)
     # Hash only bounded model configuration, not volatile quota or instance status.
