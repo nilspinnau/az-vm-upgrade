@@ -270,6 +270,58 @@ function Get-ResizePlacementAssessment {
     return $result
 }
 
+function Get-ImageGenerationAssessment {
+    param($Evidence, [string]$TargetController)
+    $osDisks=@($Evidence.disks | Where-Object id -IEQ $Evidence.vm.storageProfile.osDisk.managedDisk.id)
+    $generation=if($osDisks.Count -eq 1){$osDisks[0].hyperVGeneration}else{$null}
+    $provenance=Get-Field $Evidence 'imageProvenance'
+    $reference=Get-Field $Evidence.vm 'storageProfile.imageReference'
+    $result=@{ generation=$generation; generationPath='unknown'; imageHandling='retain-existing-os-disk'
+        provenanceStatus=if($provenance){$provenance.status}else{'not-collected'}
+        sourceReference=$reference; resolvedVersion=Get-Field $provenance 'resolvedVersion'
+        checks=@(); actions=@(); alternatives=@(); execution='assessment-only-for-generation-or-image-change' }
+    $result.actions=@(
+        'Retain the existing OS disk for compatible resize/conversion. Changing source_image_reference does not update its installed OS; never hide provider replacement.',
+        'Validate the actual guest boot mode, storage drivers/initramfs, stable paths, MANA/Mellanox, data and owner performance/health. Image tags/provenance do not prove the current booted disk ready.',
+        'A fresh image rebuild is a separate workload migration: pin image version/generation/architecture/controller/security features and region replication, preserve state/config/licenses/data/NIC/IP intent, prove restore/cutover and review Terraform replacement/import ownership.'
+    )
+    if ($provenance -and $provenance.status -eq 'collected') {
+        $metadata=if($provenance.kind -eq 'gallery-version'){$provenance.definition}else{$provenance.metadata}
+        $source=@($Evidence.skus | Where-Object name -CEQ $Evidence.vm.hardwareProfile.vmSize)
+        $arch=if($source.Count -eq 1){Get-SkuCapability $source[0] 'CpuArchitectureType'}else{$null}
+        if (($metadata.hyperVGeneration -and $generation -and $metadata.hyperVGeneration -cne $generation) -or
+            ($metadata.architecture -and $arch -and $metadata.architecture -ine $arch)) {
+            $result.checks+=New-Check 'image-provenance-conflict' failed 'Referenced image generation/architecture contradicts the current disk/SKU. Investigate ancestry; do not infer readiness or replace image silently.'
+        }
+        $result.actions+='Collected source metadata is historical provenance only. Custom/gallery copies need immutable version, definition generation/architecture/controller/security features and actual guest proof; managed-image resource ID/ETag is not an immutable gallery version.'
+    } else {
+        $result.actions+="Image provenance is $($result.provenanceStatus). Existing-disk compatibility must be independently proved; new-image deployment is not qualified by this observation."
+    }
+    if ($generation -eq 'V1') {
+        $result.generationPath='separate-trusted-launch-or-rebuild'
+        $result.alternatives=@(
+            'Supported Gen1-to-Gen2 in-place route is Trusted Launch only, never Standard Gen2; CPU architecture is unchanged.',
+            'Trusted Launch is a separate owner-approved security/boot stage. Confirm current supported SKU/OS, full pre-change backup plus tested Gen1 restore, Enhanced Backup if protected, ASR disabled/reconfigured if applicable, and exact Secure Boot/vTPM policy.',
+            'Windows: exclude Server2016 on this route; separately upgrade OS if needed. Obtain explicit consent for OS-volume encryption disable/re-enable; use Microsoft MBR2GPT validate before convert, never invent partition conversion. No rollback to Gen1 except full recovery.',
+            'Linux: current route requires supported Marketplace OS provenance (excluding Debian/AzureLinux); inspect actual boot-volume GPT, EFI system partition and /boot/efi fstab, and validate Secure Boot/kernel/drivers with Microsoft SBInfo guidance. Do not assume endorsed image alone proves modified disk layout.',
+            'Rebuild alternative: new pinned Gen2 image and explicit workload/data/state/config/license/network cutover and Terraform replacement plan, with proven restore; not an in-place image property update.'
+        )
+        $result.actions+='After a separately approved generation stage, reboot and collect fresh disk generation/security/UEFI/driver/data evidence, then create a new NVMe plan. This release still blocks Trusted Launch execution: its preservation/recovery/Terraform profile needs separate implementation and live proof; conversion does not unlock that gate.'
+    } elseif ($generation -eq 'V2') {
+        $result.generationPath='retain-gen2'
+        if ($TargetController -eq 'NVMe') {
+            $mode=Get-Field $Evidence.guest 'bootMode'
+            $windowsCandidate = $Evidence.vm.storageProfile.osDisk.osType -eq 'Windows' -and $mode -eq 'UEFI-candidate'
+            if ($mode -ne 'UEFI' -and -not $windowsCandidate) {
+                $result.checks+=New-Check 'guest-uefi' unknown 'Gen2 ARM disk metadata is not guest boot evidence; prove UEFI/Windows GPT boot candidate and NVMe boot drivers before conversion.'
+            }
+        }
+    } else {
+        $result.checks+=New-Check 'generation-assessment' unknown 'Unique authoritative OS disk generation is unavailable; no Gen1/Gen2 is inferred from image names or tags.'
+    }
+    return $result
+}
+
 function Get-CapacityReservationAssessment {
     param([Parameter(Mandatory)]$Evidence, [string]$TargetSize)
     $association = Get-Field $Evidence.vm 'capacityReservation'
@@ -363,6 +415,8 @@ function New-VmUpgradePlan {
     $currentController = Get-Field $vm 'storageProfile.diskControllerType'
     if (-not $currentController) { $checks.Add((New-Check 'current-controller' unknown 'Controller is not exposed; do not assume SCSI.')) }
     if (-not $Controller) { $Controller = $currentController }
+    $imageGeneration=Get-ImageGenerationAssessment $Evidence $Controller
+    foreach($check in $imageGeneration.checks){$checks.Add($check)}
     foreach ($placement in @('availabilitySet','virtualMachineScaleSet','proximityPlacementGroup','host','hostGroup','extendedLocation')) {
         if (Get-Field $vm $placement) { $checks.Add((New-Check "placement:$placement" unsupported 'Special placement needs a reviewed migration; no other VMs will be stopped.')) }
     }
@@ -514,6 +568,7 @@ function New-VmUpgradePlan {
         executionBoundary = 'disposable-lab-only'; checks = @($checks); advisories = $advisories; candidates = $candidates
         quota = $quotaResult; capacity = $Evidence.capacity; capacityReservation = $reservation; terraform = $iac
         resize = $resize
+        imageGeneration = $imageGeneration
         workloadReview = $WorkloadReview; fingerprint = $Evidence.fingerprint
         evidence = $Evidence; hash = $null
         disruption = if ($resize.execution -eq 'running-size-update') {

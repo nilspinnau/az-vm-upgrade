@@ -53,6 +53,7 @@ function New-FixtureEvidence {
         guest = @{
             schemaVersion = 'guest/1.0'; observedAt = [DateTimeOffset]::UtcNow.ToString('o'); complete = $true
             osProfile = 'ubuntu:22.04:x86_64'; agentReady = $true; pendingReboot = $false
+            bootMode = 'UEFI'
             nvmeDriver = 'pass'; nvmeBoot = 'pass'; manaDriver = 'pass'; mellanoxDriver = 'pass'
             actualController = 'SCSI'; persistentMounts = $true; layoutSupported = $true
             storageIdentityHash = ('1' * 64); sentinelHash = ('2' * 64); applicationHealth = 'pass'

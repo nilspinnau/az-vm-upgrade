@@ -105,6 +105,10 @@ function Export-VmUpgradeReport {
     }
     $lines.Add('')
     $lines.Add('## Action plan')
+    if($Plan.imageGeneration) {
+        $lines.Add("Generation path: $($Plan.imageGeneration.generationPath); image handling: $($Plan.imageGeneration.imageHandling); provenance: $($Plan.imageGeneration.provenanceStatus).")
+        foreach($action in @($Plan.imageGeneration.actions)+@($Plan.imageGeneration.alternatives)){$lines.Add("- $(ConvertTo-MarkdownCell $action)")}
+    }
     $lines.Add('Resolve every non-pass check; obtain workload-owner review and independently test application health. Reassess after guest preparation or configuration changes.')
     $lines.Add('Obtain approved application-consistent backup or explicitly accepted recovery evidence. Accept single-VM downtime and temporary-data loss; pause other configuration writers.')
     $lines.Add('Review target size/controller and exact Terraform mapping/plan. This version changes only size/controller and, for eligible NVMe transitions, OS disk controller capability; NIC, security, image, placement and storage tiers are retained.')

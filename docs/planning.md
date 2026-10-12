@@ -228,3 +228,39 @@ Public procedures:
 [overview](https://learn.microsoft.com/azure/virtual-machines/capacity-reservation-overview),
 [resize/modify](https://learn.microsoft.com/azure/virtual-machines/capacity-reservation-modify),
 [remove association](https://learn.microsoft.com/azure/virtual-machines/capacity-reservation-remove-vm).
+# Generation and OS image decisions
+
+Plans retain the existing OS disk for compatible native resize and Gen2
+SCSI-to-NVMe conversion. The VM image reference records origin, not the
+currently installed OS/kernel or an instruction to upgrade it. Changing
+Terraform `source_image_reference` is not an in-place OS upgrade; inspect the
+normal plan for replacement rather than hiding it with lifecycle exclusions.
+
+Discovery records the exact resolved Marketplace version, or same-subscription
+managed-image identity/ETag, or immutable gallery version plus definition
+generation, architecture and controller/security features. It retains raw
+responses before checking identity. Unresolved `latest`, inaccessible sources,
+specialized disks and unsupported shared/cross-subscription references are
+explicit provenance gaps, not assumed guest readiness. A managed-image ID is
+not an immutable gallery version. Source metadata is historical evidence;
+actual attached OS disk generation, boot mode, drivers, stable paths and
+health remain independently required. Contradictions require investigation.
+
+For Gen1, compatible SCSI resize does not change generation. NVMe requires a
+separate generation stage. Microsoft's supported in-place Gen1-to-Gen2 route
+is **Trusted Launch only**, not Standard Gen2, and does not change architecture.
+It requires separately reviewed supported OS/SKU, full backup and tested Gen1
+restore (no in-place downgrade), Enhanced Backup/ASR handling where applicable,
+and explicit security policy. Windows needs Microsoft MBR2GPT validation
+before conversion and separately consented OS-volume encryption handling;
+Server 2016 is excluded on this route. Linux needs supported Marketplace
+provenance, actual GPT/EFI partition and EFI fstab inspection, plus Secure Boot
+driver checks; no custom partition conversion is automated.
+
+The toolkit does **not** perform that irreversible security/boot stage. After
+it, reboot/reassess and create a new plan; Trusted Launch is still blocked by
+this executor until its preservation, recovery and Terraform profile is
+implemented and independently proved. The alternative is an explicitly
+planned pinned Gen2-image workload rebuild with state/configuration/licenses,
+data/NIC/IP ownership, cutover and tested restore. Neither path is smuggled
+into a size PATCH or inferred from image tags.

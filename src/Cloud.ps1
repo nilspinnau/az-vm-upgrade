@@ -205,6 +205,9 @@ function Get-VmEvidence {
                 networkAccessPolicy = $disk.properties.networkAccessPolicy
                 diskIOPSReadWrite = $disk.properties.diskIOPSReadWrite
                 diskMBpsReadWrite = $disk.properties.diskMBpsReadWrite
+                creationData = @{ createOption = Get-Field $disk 'properties.creationData.createOption'
+                    sourceResourceId = Get-Field $disk 'properties.creationData.sourceResourceId'
+                    imageReference = Get-Field $disk 'properties.creationData.imageReference' }
             })
         } catch {
             $status = if ($_.Exception.Message -match 'AuthorizationFailed|Forbidden|403') { 'denied' } else { 'failed' }
@@ -229,6 +232,7 @@ function Get-VmEvidence {
     $skus = Invoke-UpgradeAz @('vm','list-skus','--subscription',$identity.subscriptionId,
         '--location',$vm.location,'--resource-type','virtualMachines','--all')
     $usage = Invoke-UpgradeAz @('vm','list-usage','--subscription',$identity.subscriptionId,'--location',$vm.location)
+    $imageProvenance = Get-ImageProvenanceEvidence $vm $identity.subscriptionId -ObservationPath $ObservationPath
     $hostEncryption = $null
     if ((Get-Field $vm 'securityProfile.encryptionAtHost') -eq $true) {
         try {
@@ -258,6 +262,7 @@ function Get-VmEvidence {
         hostEncryption = $hostEncryption
         capacityReservationEvidence = $reservationEvidence
         resizeOptions = $resizeOptions
+        imageProvenance = $imageProvenance
         capacity = @{ status = 'unknown'; detail = 'Quota and advertised SKU availability do not guarantee allocation.' }
         fingerprint = $null
     }
@@ -265,6 +270,65 @@ function Get-VmEvidence {
     $evidence.fingerprint = Get-ConfigurationFingerprint $evidence
     Test-UpgradeDocument $evidence evidence | Out-Null
     return $evidence
+}
+
+function Get-ImageProvenanceEvidence {
+    param($Vm, [string]$SubscriptionId, [string]$ObservationPath)
+    $reference = Get-Field $Vm 'storageProfile.imageReference'
+    $result = @{ status='not-exposed'; kind='specialized-or-unknown'; observedAt=[DateTimeOffset]::UtcNow.ToString('o')
+        reference=$reference; resolvedVersion=$null; metadata=$null; definition=$null; error=$null }
+    if (-not $reference) { return $result }
+    try {
+        if ($reference.id) {
+            $id = [string]$reference.id
+            if ($id -notmatch '^/subscriptions/([0-9a-f-]{36})/resourceGroups/[^/]+/providers/Microsoft\.Compute/(images/[^/]+|galleries/[^/]+/images/[^/]+/versions/[0-9]+\.[0-9]+\.[0-9]+)$' -or
+                $Matches[1] -ine $SubscriptionId) { throw 'Image resource must be an exact same-subscription managed image or immutable gallery version; shared/community/cross-subscription references require separate review.' }
+            $result.kind = if ($id -match '/galleries/') { 'gallery-version' } else { 'managed-image' }
+            $apiVersion = if ($result.kind -eq 'gallery-version') { '2023-07-03' } else { '2024-03-01' }
+            $raw = Invoke-ArmRead $id $apiVersion
+            if ($ObservationPath) { Write-UpgradeJson $raw "$ObservationPath.image-source.json" }
+            if ($raw.id -ine $id) { throw 'Image metadata response identity contradicts the referenced resource.' }
+            if ($result.kind -eq 'gallery-version') {
+                $result.resolvedVersion = ($id -split '/')[-1]
+                $definitionId = $id -replace '/versions/[^/]+$',''
+                $definition = Invoke-ArmRead $definitionId '2023-07-03'
+                if ($ObservationPath) { Write-UpgradeJson $definition "$ObservationPath.image-definition.json" }
+                if ($definition.id -ine $definitionId) { throw 'Gallery definition response identity mismatch.' }
+                $result.definition = @{ id=$definition.id; etag=$definition.etag
+                    hyperVGeneration=$definition.properties.hyperVGeneration; architecture=$definition.properties.architecture
+                    osType=$definition.properties.osType; osState=$definition.properties.osState
+                    features=@($definition.properties.features) }
+                $result.metadata = @{ id=$raw.id; etag=$raw.etag; provisioningState=$raw.properties.provisioningState
+                    excludeFromLatest=Get-Field $raw 'properties.publishingProfile.excludeFromLatest' }
+            } else {
+                $result.metadata = @{ id=$raw.id; etag=$raw.etag; hyperVGeneration=$raw.properties.hyperVGeneration
+                    architecture=Get-Field $raw 'properties.architecture'; provisioningState=$raw.properties.provisioningState
+                    osType=Get-Field $raw 'properties.storageProfile.osDisk.osType'
+                    osState=Get-Field $raw 'properties.storageProfile.osDisk.osState' }
+            }
+        } elseif ($reference.publisher -and $reference.offer -and $reference.sku) {
+            $result.kind='marketplace'
+            $version = if ($reference.exactVersion) { $reference.exactVersion } else { $reference.version }
+            if (-not $version -or $version -ieq 'latest') { throw 'Marketplace provenance needs a resolved exact version, not latest.' }
+            foreach ($segment in @($reference.publisher,$reference.offer,$reference.sku,$version)) {
+                if ($segment -notmatch '^[A-Za-z0-9._-]+$') { throw 'Malformed Marketplace image reference.' }
+            }
+            $urn = "$($reference.publisher):$($reference.offer):$($reference.sku):$version"
+            $raw = Invoke-UpgradeAz @('vm','image','show','--subscription',$SubscriptionId,'--location',$Vm.location,'--urn',$urn)
+            if ($ObservationPath) { Write-UpgradeJson $raw "$ObservationPath.image-source.json" }
+            if ($raw.name -cne $version) { throw 'Marketplace response version does not match exact provenance.' }
+            $result.resolvedVersion = $version
+            $result.metadata = @{ version=$raw.name; hyperVGeneration=$raw.hyperVGeneration; architecture=$raw.architecture
+                osType=$raw.osDiskImage.operatingSystem; features=@($raw.features) }
+        } else { throw 'Incomplete or shared/community image reference requires separate provenance review.' }
+        $result.status='collected'
+    } catch [IO.IOException], [UnauthorizedAccessException] { throw }
+    catch {
+        $result.status=if ($_.Exception.Message -match 'AuthorizationFailed|Forbidden|403') { 'denied' } else { 'failed' }
+        $result.error=$_.Exception.Message
+    }
+    if ($ObservationPath) { Write-UpgradeJson $result "$ObservationPath.image-provenance.json" }
+    return $result
 }
 
 function Invoke-VmGuestProbe {

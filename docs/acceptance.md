@@ -629,3 +629,34 @@ acceptance is inferred from offline mocks.
 The journal records execution mode; a native journal relabeled as cold refuses
 resume even after completion. The 11 reviewed top-level wrapper/supervised mocks
 also pass using synthetic recognized date inputs, not renewed live approval.
+# Bounded proof closure criteria
+
+Generation/image additions passed 293 offline Pester regressions, including
+21 dedicated generation/provenance cases. The complete offline command also
+passed parsing/analyzers/guest syntax and six Terraform mocked plans before
+the final two OS-specific boot-label regressions were added. No Azure mutation
+was part of those checks.
+
+Each result below requires its own exact image/size/security/region profile;
+mocked success never promotes a live path. Historical successful NVMe results
+remain scoped to their recorded Ubuntu AMD profile.
+
+| Path | Implemented boundary | Required live closure evidence |
+|---|---|---|
+| Native running SCSI resize | Preferred eligible standalone size-only update; no cold fallback | Successful Azure operation plus running guest IMDS target size/CPU, boot/controller, retained disk/mount/checksum, health/HTTPS/VF, host encryption, zero explicit deallocate/start/controller/disk mutations and normal Terraform no-op |
+| Explicit cold SCSI resize | Approved deallocate-size-update-start | Same runtime/data/network/security/Terraform proof and exact power journal; cluster relocation claimed only with actual placement/list evidence |
+| Gen2 SCSI-to-NVMe | Narrow approved preparation/conversion and sequential restore | Actual UEFI/driver/controller transition, preparation/reboot/rollback, retained UUID/checksum/mount, health/HTTPS/VF, encryption, two-disk snapshot restore on private recovery VM, original restart and normal Terraform no-op |
+| Image provenance | Read-only resolved Marketplace/gallery/managed-image metadata and contradiction checks | Exact source identity/version plus actual booted OS/kernel/drivers; custom/gallery/module-staged or Windows profiles require separate tests, not an Ubuntu label |
+| Gen1-to-Gen2 | Separate TL-only assessment or workload rebuild; mutation not implemented | Supported prerequisites, full backup and tested Gen1 restore, explicit security/boot consent, actual post-stage UEFI/security evidence; TL execution/recovery/Terraform support still needs implementation before an NVMe stage |
+| Pinned-image rebuild | Planning only, no hidden replacement | Workload state/config/license/data/network cutover and restore proof, explicit Terraform replacement/import ownership and owner signoff |
+
+The new bounded test authorization permits at most 20 disposable tests at
+USD5 each (aggregate USD100), subject to the monthly ceiling and fresh gates.
+It supersedes the earlier testing suspension only for scoped test labs.
+Initial parallel profiles are native SCSI resize, explicit cold SCSI resize
+and a Gen2 NVMe full cycle; preparation or authorization is not a passed test.
+Each has isolated state/journal/supervisor/owned cleanup, a finite maximum
+four-hour deadline and 45-minute cleanup reserve. A reliable awake host is
+required: supervision cannot execute through sleep, shutdown or loss of host.
+No production acceptance, other image certification or shared reservation/
+security changes follow from this authorization.

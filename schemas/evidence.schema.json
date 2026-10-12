@@ -26,6 +26,17 @@
     "guest": {"type": ["object", "null"]},
     "checks": {"type": "array"},
     "capacity": {"type": "object", "required": ["status", "detail"]},
+    "imageProvenance": {
+      "type": "object",
+      "required": ["status", "kind", "observedAt", "reference", "resolvedVersion", "metadata", "definition", "error"],
+      "properties": {
+        "status": {"enum": ["not-exposed", "collected", "denied", "failed"]},
+        "kind": {"enum": ["specialized-or-unknown", "marketplace", "managed-image", "gallery-version"]},
+        "observedAt": {"type": "string", "format": "date-time"},
+        "metadata": {"type": ["object", "null"]},
+        "definition": {"type": ["object", "null"]}
+      }
+    },
     "resizeOptions": {
       "type": "object",
       "required": ["status", "observedAt", "sizes", "error"],

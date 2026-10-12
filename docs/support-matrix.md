@@ -14,7 +14,7 @@ labs. There is no bypass for production, previews or unknown checks.
 | SUSE/SLES SAP, RHEL, other builds | Evidence and action plan | Assessment-only; no inferred OS/version certification |
 | No-temp-disk source and target | Capability/guest checks | Required for every executable path |
 | Existing temp disk / NVMe local storage | Detects capabilities/dependencies | Blocked; reviewed rebuild/preview path outside this release |
-| Gen1-to-Gen2 / architecture change | Detected and explained | Separate rebuild/conversion |
+| Gen1-to-Gen2 / architecture change | Disk-authoritative generation and image provenance; explicit alternatives | Separate TL-only conversion or workload rebuild; no Standard Gen2 in-place route, automatic security/partition/image changes or architecture conversion |
 | Spot, availability set, VMSS, host/group, PPG, capacity reservation, edge zone | Detected and explained | Separate reviewed placement workflow; no neighboring VM shutdown |
 | ADE, customer-managed encryption, confidential / Trusted Launch | Detected and explained | Separate validated encryption/security/recovery path |
 | Encryption at host with platform-key ordinary managed disks | Source/target capability and Registered subscription feature required | Retained across the exact Ubuntu AMD SCSI-to-NVMe lab; post-phase security drift is rejected; no broader certification |
@@ -31,7 +31,7 @@ Live observations are scoped to the exact disposable profile, never a blanket pr
 |---|---|---|
 | Pre-mutation protection and proven restore | Partial live | Corrected full harness passed on exact Ubuntu 24.04 AMD profile: synthetic LRS snapshot copies booted on private host-encrypted SCSI recovery VM; UUID/checksum/health passed. Not app-consistent backup certification or an original-SKU allocation guarantee |
 | Image/OS/kernel support | Partial | Ubuntu 22.04/24.04 and Windows Server 2022 probed; others assessment-only; no generic kernel gating |
-| Gen1/Gen2/rebuild | Blocked by design | Detected; separate rebuild |
+| Gen1/Gen2/rebuild | Assessment implemented; mutation blocked | Gen1 SCSI can retain generation if compatible; Gen1 NVMe blocked. Separate TL-only stage or pinned Gen2 rebuild; current TL executor remains blocked |
 | Trusted Launch / ADE / CMK | Blocked by design | Detected and explained |
 | Encryption at host | Implemented / Partial live | Exact Ubuntu AMD migration preserved the enabled setting; capability/feature and drift gates plus normal Terraform no-op passed. Recovery must restore the VM property separately from disk snapshots |
 | RAID/LVM/crypt/shared, temp disk, pagefile, swap | Blocked by design | Detected; temp-disk initialization separately approved, not implemented |

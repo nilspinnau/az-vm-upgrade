@@ -19,6 +19,17 @@
     "candidates": {"type": "array"},
     "quota": {"type": "object"},
     "capacity": {"type": "object"},
+    "imageGeneration": {
+      "type": "object",
+      "required": ["generationPath", "imageHandling", "provenanceStatus", "checks", "actions", "alternatives", "execution"],
+      "properties": {
+        "generationPath": {"enum": ["unknown", "retain-gen2", "separate-trusted-launch-or-rebuild"]},
+        "imageHandling": {"const": "retain-existing-os-disk"},
+        "actions": {"type": "array", "items": {"type": "string"}},
+        "alternatives": {"type": "array", "items": {"type": "string"}},
+        "execution": {"const": "assessment-only-for-generation-or-image-change"}
+      }
+    },
     "resize": {
       "type": "object",
       "required": ["status", "detail", "execution"],

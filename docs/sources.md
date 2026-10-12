@@ -5,6 +5,18 @@ utility, customer material or SAP project implementation is bundled.
 
 Native resize additions reviewed 2026-10-12:
 
+- https://learn.microsoft.com/en-us/azure/virtual-machines/trusted-launch-existing-vm-gen-1
+  documents the separate Gen1-to-Trusted-Launch route, not Standard Gen2,
+  supported OS/SKU, irreversible boot conversion, backup/ASR/encryption and
+  actual EFI/partition/Secure Boot prerequisites. This is assessment guidance,
+  not authorization or implemented security/partition conversion.
+- https://learn.microsoft.com/en-us/rest/api/compute/images/get?view=rest-compute-2024-03-01
+  specifies managed-image API `2024-03-01`.
+  https://learn.microsoft.com/en-us/rest/api/compute/gallery-images/get?view=rest-compute-2024-03-01
+  and https://learn.microsoft.com/en-us/rest/api/compute/gallery-image-versions/get?view=rest-compute-2024-03-01
+  specify gallery API `2023-07-03` (the documentation moniker is not the wire
+  API version). Definition metadata is provenance, not proof of current guest
+  boot readiness or immutable managed-image contents.
 - https://learn.microsoft.com/en-us/cli/azure/vm?view=azure-cli-latest#az-vm-resize
   documents `az vm resize --resource-group ... --name ... --size ...`.
   The resize page also documents PowerShell `Get-AzVMSize`,
