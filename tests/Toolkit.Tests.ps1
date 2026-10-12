@@ -492,7 +492,7 @@ InModuleScope AzVmUpgrade {
                 param($Id,$ApiVersion)
                 if ($Id -match '/disks/') { return @{properties=@{provisioningState='Succeeded';supportedCapabilities=@{diskControllerTypes='SCSI, NVMe'}}} }
                 if ($Id -match '/instanceView$') { return @{statuses=$script:simulation.instanceView.statuses} }
-                return @{properties=@{provisioningState='Succeeded';hardwareProfile=$script:simulation.vm.hardwareProfile;storageProfile=$script:simulation.vm.storageProfile}}
+                return New-FixtureArmModel $script:simulation.vm
             }
             Mock Start-Sleep {}
         }
@@ -697,6 +697,99 @@ InModuleScope AzVmUpgrade {
             $source = Get-Content (Join-Path $script:RepositoryRoot 'src\Execution.ps1') -Raw
             $source | Should -Not -Match 'Format-Volume|Initialize-Disk|mkfs|wipefs|Remove-AzVM|az vm delete'
         }
+        Describe 'Post-guest terminal reconciliation reads' {
+            It 'keeps verified until bounded fresh reads prove completion: <Case>' -ForEach @(
+                @{Case='stabilized';Completes=$true}, @{Case='stuck';Completes=$false},
+                @{Case='failed';Completes=$false}, @{Case='missing';Completes=$false},
+                @{Case='duplicate';Completes=$false}, @{Case='unknown';Completes=$false},
+                @{Case='drift';Completes=$false}, @{Case='security';Completes=$false},
+                @{Case='identity';Completes=$false}, @{Case='etag';Completes=$false},
+                @{Case='reserve';Completes=$false}, @{Case='write-failure';Completes=$false},
+                @{Case='old-guest-runtime';Completes=$false}
+            ) {
+                $script:requireRealOwnerAcceptance = $true
+                { Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Confirm:$false } | Should -Throw '*not complete*'
+                $journalPath = (Get-ChildItem $script:journalDir -Filter *.journal.json).FullName
+                $before = Read-UpgradeJson $journalPath
+                $script:requireRealOwnerAcceptance = $false
+                $script:terminalCase = $Case
+                $script:terminalInstanceReads = 0
+                $script:terminalReads = 0
+                Mock Get-VmEvidence {
+                    $copy = $script:simulation | ConvertTo-Json -Depth 100 | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String
+                    $copy.instanceView.statuses[0].code = 'ProvisioningState/updating'
+                    if ($script:terminalCase -eq 'old-guest-runtime') {
+                        $copy.guest.runtimeSizeEvidence.vmSize = 'Standard_D2s_v5'
+                    }
+                    $copy.fingerprint = Get-ConfigurationFingerprint $copy
+                    return $copy
+                }
+                Mock Invoke-ArmRead {
+                    param($Id,$Deadline)
+                    $script:terminalReads++
+                    $Deadline | Should -BeLessOrEqual ([DateTimeOffset]::UtcNow.AddSeconds(120))
+                    if ($Id -match '/instanceView$') {
+                        $script:terminalInstanceReads++
+                        $code = if ($script:terminalCase -eq 'stabilized' -and $script:terminalInstanceReads -eq 1 -or
+                            $script:terminalCase -eq 'stuck') { 'ProvisioningState/updating' } else { 'ProvisioningState/succeeded' }
+                        $statuses = @(@{code=$code},@{code='PowerState/running'})
+                        switch ($script:terminalCase) {
+                            failed { $statuses[0].code='ProvisioningState/failed' }
+                            unknown { $statuses[0].code='ProvisioningState/unknown' }
+                            missing { $statuses=@(@{code='PowerState/running'}) }
+                            duplicate { $statuses+=@(@{code='ProvisioningState/updating'}) }
+                        }
+                        return @{statuses=$statuses}
+                    }
+                    $model = New-FixtureArmModel $script:simulation.vm
+                    switch ($script:terminalCase) {
+                        drift { $model.properties.hardwareProfile=@{vmSize='wrong-size'} }
+                        security { $model.properties.securityProfile=@{encryptionAtHost=$false} }
+                        identity { $model.id=$model.id -replace 'testvm$','other-vm' }
+                        etag { $model.etag='"unexpected"' }
+                        reserve { $env:AZVM_LAB_WORK_DEADLINE=[DateTimeOffset]::UtcNow.AddSeconds(-1).ToString('o') }
+                    }
+                    return $model
+                }
+                if ($Case -eq 'write-failure') {
+                    Mock Write-UpgradeJson { throw [IO.IOException]::new('sample publication failed') } -ParameterFilter { $Path -like '*.sample-*.json' }
+                }
+                $oldReserve=$env:AZVM_LAB_WORK_DEADLINE
+                try {
+                    if ($Completes) {
+                        $result = Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Resume -Confirm:$false
+                        $result.phase | Should -Be 'reconciled'
+                        $script:terminalInstanceReads | Should -Be 2
+                        $result.reconciliationTerminalEvidence.instanceView.statuses[0].code | Should -Be 'ProvisioningState/succeeded'
+                        $result.reconciliationTerminalEvidence.guest.observedAt | Should -Be $result.reconciliationEvidence.guest.observedAt
+                    } else {
+                        { Invoke-VmUpgrade $script:planPath $script:approvalPath -JournalDirectory $script:journalDir -Resume -Confirm:$false } | Should -Throw
+                        $result = Read-UpgradeJson $journalPath
+                        $result.phase | Should -Be 'verified'
+                        $result.events.phase | Should -Not -Contain 'reconciled'
+                        $result.lastError.detail | Should -Not -BeNullOrEmpty
+                    }
+                } finally { $env:AZVM_LAB_WORK_DEADLINE=$oldReserve }
+                $result.pendingOperation | Should -BeNullOrEmpty
+                $result.planHash | Should -Be $before.planHash
+                $result.approvalHash | Should -Be $before.approvalHash
+                $result.expectedFingerprint | Should -Be $before.expectedFingerprint
+                $result.reconciliationEvidence.instanceView.statuses[0].code | Should -Be 'ProvisioningState/updating'
+                Should -Invoke Get-VmEvidence -Times 1 -Exactly -ParameterFilter { $ObservationPath -like '*.reconciliation' -and $GuestConsent }
+                Should -Invoke Invoke-MinimalArmPatch -Times 2 -Exactly
+                Should -Invoke Invoke-ArmPowerAction -Times 2 -Exactly
+                if ($Case -eq 'write-failure') { $script:terminalReads | Should -Be 0 }
+                else {
+                    $samples = @(Get-ChildItem $script:journalDir -Filter '*.sample-*.json')
+                    $samples.Count | Should -BeGreaterThan 0
+                    $first = Read-UpgradeJson $samples[0].FullName
+                    $first.model.id | Should -Not -BeNullOrEmpty
+                    if ($Case -eq 'reserve') { $script:terminalInstanceReads | Should -Be 0 }
+                    else { $first.instanceView.statuses | Should -Not -BeNullOrEmpty }
+                }
+            }
+        }
+
         Describe 'Preferred running native resize' {
             BeforeEach {
                 $script:plan = New-VmUpgradePlan $script:simulation -TargetSize Standard_D2s_v6 -Controller SCSI -WorkloadReview (New-FixtureReview)

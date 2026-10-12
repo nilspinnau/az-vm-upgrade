@@ -340,6 +340,41 @@ cleanup results. The migration engine never deletes resources. The separately
 consented restoration harness removes only its exact ownership-marked recovery
 resources; final lab-group teardown remains an operator action.
 
+## Post-guest reconciliation status freshness
+
+After guest verification, owner acceptance and any normal Terraform no-op,
+the `verified` → `reconciled` path preserves the original collected evidence,
+then obtains fresh model and instance-view **GET** pairs. Guest collection can
+take minutes; its completion timestamp does not make an earlier instance-view
+sample current. The terminal reads do not repeat guest commands, resize,
+power operations or Terraform apply.
+
+Each raw model/instance sample and its observation times are durably retained
+in separate `reconciliation-status.<collection-id>.sample-NN.json` files before validation.
+Partial samples survive a denied/failed second read. Completion requires the
+same VM/subscription/tenant, expected configuration fingerprint (including
+ETag), exact target size/controller and preserved security, model `Succeeded`,
+and exactly one instance provisioning `succeeded` and power `running`.
+Only explicit `Updating`/`updating` with running power permits another pair;
+failed, unknown, missing, duplicate, nonrunning or drifted observations refuse
+immediately. Fresh terminal evidence is recorded separately; neither the
+original sample nor its guest observation time is overwritten.
+
+Polling is bounded by 120 seconds, at most 25 pairs, and the earlier
+`AZVM_LAB_WORK_DEADLINE` cleanup-reserve cutoff. Both GET processes inherit the
+same absolute deadline, including their remaining request time. A timeout,
+durable-write failure or refusal leaves the journal `verified`, never
+`reconciled`, with no mutation retry. Existing unknown-operation/manual-recovery
+and exact cleanup requirements remain applicable.
+
+[Azure VM states](https://learn.microsoft.com/en-us/azure/virtual-machines/states-billing)
+distinguish provisioning from power state;
+[Instance View GET](https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/instance-view?view=rest-compute-2024-07-01)
+retrieves runtime state. These APIs support status refresh, not a promise of
+eventual success or a known-issue diagnosis. A historical refused run is not
+retroactively successful. Offline regressions cover fresh completion, refusal,
+deadline propagation and preservation; they do not prove Azure consistency.
+
 ## Offline coverage
 
 `scripts/Test-Offline.ps1` parses PowerShell/Bash and embedded Python, runs the configured security/

@@ -179,7 +179,8 @@ function Invoke-UpgradeProcess {
 }
 
 function Invoke-UpgradeAz {
-    param([Parameter(Mandatory)][string[]]$Arguments, [int]$TimeoutSeconds = 900)
+    param([Parameter(Mandatory)][string[]]$Arguments, [int]$TimeoutSeconds = 900,
+        [DateTimeOffset]$Deadline = [DateTimeOffset]::MaxValue)
     $command = (Get-Command az -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
     $start = [Diagnostics.ProcessStartInfo]::new()
     $start.UseShellExecute = $false
@@ -213,16 +214,16 @@ function Invoke-UpgradeAz {
             $operation.Add($Arguments[$methodIndex + 1].ToUpperInvariant())
         }
     }
-    $result = Invoke-UpgradeProcess -StartInfo $start -TimeoutSeconds $TimeoutSeconds -ObservationPath $observationPath -Operation ($operation -join ' ')
+    $result = Invoke-UpgradeProcess -StartInfo $start -TimeoutSeconds $TimeoutSeconds -Deadline $Deadline -ObservationPath $observationPath -Operation ($operation -join ' ')
     if ($result.exitCode -ne 0) { throw "Azure CLI failed ($($result.exitCode)): $($result.stderr)" }
     if ([string]::IsNullOrWhiteSpace($result.stdout)) { return $null }
     return ($result.stdout | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String)
 }
 
 function Invoke-ArmRead {
-    param([string]$Id, [string]$ApiVersion)
+    param([string]$Id, [string]$ApiVersion, [DateTimeOffset]$Deadline = [DateTimeOffset]::MaxValue)
     if ($Id -notmatch '^/subscriptions/([0-9a-f-]{36})/') { throw 'An explicitly subscription-scoped ARM resource ID is required.' }
-    Invoke-UpgradeAz @('rest','--method','get','--subscription',$Matches[1],'--url',"$Id`?api-version=$ApiVersion")
+    Invoke-UpgradeAz @('rest','--method','get','--subscription',$Matches[1],'--url',"$Id`?api-version=$ApiVersion") -Deadline $Deadline
 }
 
 function Wait-LabCostRetry {

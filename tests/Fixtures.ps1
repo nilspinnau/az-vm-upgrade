@@ -63,8 +63,20 @@ function New-FixtureEvidence {
         capacity = @{ status = 'unknown'; detail = 'Synthetic fixture, not live evidence.' }; fingerprint = '0' * 64
         resizeOptions = @{status='collected';observedAt=[DateTimeOffset]::UtcNow.ToString('o');sizes=@('Standard_D2s_v5','Standard_D2s_v6');error=$null}
     }
+    $evidence.vm = & (Get-Module AzVmUpgrade) { param($model) Get-BoundedVmModel $model } (New-FixtureArmModel $evidence.vm)
     $evidence.fingerprint = & (Get-Module AzVmUpgrade) { param($e) Get-ConfigurationFingerprint $e } $evidence
     return $evidence
+}
+
+function New-FixtureArmModel {
+    param($Vm, [string]$ProvisioningState = 'Succeeded')
+    $properties = @{} + $Vm
+    $properties.provisioningState = $ProvisioningState
+    $properties.osProfile = @{ allowExtensionOperations = $Vm.allowExtensionOperations
+        linuxConfiguration = @{ provisionVMAgent = $Vm.provisionVmAgent }
+        windowsConfiguration = @{ provisionVMAgent = $Vm.provisionVmAgent } }
+    @{ id = $Vm.id; location = $Vm.location; zones = $Vm.zones; etag = $Vm.etag
+        tags = $Vm.tags; plan = $Vm.plan; licenseType = $Vm.licenseType; properties = $properties }
 }
 
 function New-FixtureReview {

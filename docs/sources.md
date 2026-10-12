@@ -5,6 +5,16 @@ utility, customer material or SAP project implementation is bundled.
 
 Native resize additions reviewed 2026-10-12:
 
+- https://learn.microsoft.com/en-us/azure/virtual-machines/states-billing
+  distinguishes model/instance provisioning from power state: running is
+  not terminal provisioning success. The post-guest reconciliation refresh
+  polls explicit updating only, never assumes an unknown/failed sample was
+  transient or replays a mutation.
+- https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/memory-optimized/ebdsv5-ebsv5-series
+  explicitly supports SCSI for Ebsv5 Gen1/Gen2, no local disk and required
+  Accelerated Networking. Exact regional capabilities and actual runtime
+  still gate the new D2as_v5 to E2bs_v5 disposable profile; two CPUs alone
+  cannot prove the different target SKU.
 - https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/manage-automation
   documents Query API throttling and the QPU retry-after header, plus delayed
   telemetry and avoiding repeated queries.

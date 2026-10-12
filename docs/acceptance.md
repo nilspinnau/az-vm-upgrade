@@ -633,6 +633,37 @@ also pass using synthetic recognized date inputs, not renewed live approval.
 
 ## Parallel attempts, 2026-10-12
 
+### Subsequent explicit-controller profile
+
+Two separately labelled attempts used pinned Ubuntu 24.04 x64 Gen2, Sweden
+Central/no zone, Standard security with host encryption, D2as_v5/SCSI to
+E2bs_v5/SCSI, 64GiB OS plus synthetic 8GiB LUN0, private accelerated NIC and
+no public IP/NAT/Bastion. E2bs_v5 explicitly advertised SCSI/NVMe and has
+public SCSI support; both sizes have two CPUs, so exact IMDS runtime SKU was
+required. These results do not promote the earlier D4as_v5 pair.
+
+| Attempt | Result and proof boundary | Creation to independently verified absence (UTC) | Modeled cost with allowances; invoice unknown |
+|---|---|---|---|
+| TEST4 native running | Actual E2bs_v5/UEFI/SCSI, retained data/mounts, health/HTTPS/VF/encryption and source/target normal Terraform no-op passed. One size-only update, zero explicit power/controller/disk mutations. Final reconciliation refused `updating/running`; journal remained verified, not reconciled | 17:54:38 to 18:34:15; 39m37s | USD0.923 |
+| TEST5 explicit cold | **Passed**: deallocate, size-only update, start; no controller change or guest preparation. Exact E2bs_v5 runtime, boot, UUID/checksum/mounts, health/HTTPS/VF/encryption, independent acceptance and normal Terraform no-op. Journal reconciled with no pending operation/error | 17:52:10 to 18:43:22; 51m12s | USD0.791 |
+
+Aggregate: **5/20 slots consumed, four source-lab creation attempts, every
+owned group independently absent, no deadline breach**. The five attempts'
+conservative modeled allowances total about USD3.16411, not billed charges.
+TEST5 proves this exact synthetic cold resize, not cluster relocation,
+workload certification or production support. TEST4 proves its native update
+and runtime/data observations but not full final acceptance.
+
+TEST4 retained an instance observation from 18:27:35 (`updating/running`)
+through lengthy evidence collection until 18:30:51, despite the model read
+at 18:27:32 being Succeeded. This demonstrates a sampling gap; Azure's
+underlying transition cause and later terminal state are unknown. The new
+bounded post-guest reconciliation model/instance GET check is offline-tested
+and does not retroactively promote this failed attempt. It requires fresh
+unique Succeeded/running and unchanged configuration/security, polls only
+explicit updating, retains raw samples and refuses unknown/failure/drift,
+deadline expiry or cleanup reserve. No guest command or mutation is replayed.
+
 Three launch attempts consumed **3/20** newly authorized test slots, distinct
 from **two source-lab creation attempts**. All three owned groups were
 independently verified absent; supervisors exited. No attempt breached its

@@ -233,8 +233,10 @@ function Test-PostUpgradeGuest {
     Assert-UpgradeSecurityPreserved $Plan.evidence $Live
     if ($Live.vm.hardwareProfile.vmSize -cne $Plan.targetSize -or
         $Live.vm.storageProfile.diskControllerType -cne $Plan.targetController) { throw 'Post-upgrade model does not match target.' }
-    if (@($Live.instanceView.statuses | Where-Object code -EQ 'PowerState/running').Count -ne 1 -or
-        @($Live.instanceView.statuses | Where-Object code -EQ 'ProvisioningState/succeeded').Count -ne 1) {
+    $power = @($Live.instanceView.statuses | Where-Object { $_.code -like 'PowerState/*' })
+    $provisioning = @($Live.instanceView.statuses | Where-Object { $_.code -like 'ProvisioningState/*' })
+    if ($power.Count -ne 1 -or $power[0].code -isnot [string] -or $power[0].code -cne 'PowerState/running' -or
+        $provisioning.Count -ne 1 -or $provisioning[0].code -isnot [string] -or $provisioning[0].code -cne 'ProvisioningState/succeeded') {
         throw "VM instance is not healthy and running. Observed status codes: $(@($Live.instanceView.statuses.code) -join ', ')."
     }
     $guest = $Live.guest
@@ -271,6 +273,87 @@ function Test-PostUpgradeGuest {
     }
     if ($Plan.workloadReview.requireManaInUse -eq $true -and $guest.manaInUse -ne 'pass') { throw 'Target did not prove MANA traffic use; host placement is not guaranteed.' }
     $Live.applicationHealthChecks = @(Get-ApplicationHealthEvidence $Plan.workloadReview)
+}
+
+function Get-ReconciliationTerminalEvidence {
+    param($Plan, $Live, [string]$ExpectedFingerprint, [Parameter(Mandatory)][string]$ObservationPath,
+        [ValidateRange(1,120)][int]$TimeoutSeconds = 120)
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    if ($env:AZVM_LAB_WORK_DEADLINE) {
+        $reserve = [DateTimeOffset]::Parse($env:AZVM_LAB_WORK_DEADLINE)
+        if ($reserve -lt $deadline) { $deadline = $reserve }
+    }
+    $identity = Get-VmIdentity $Plan.vmId
+    if ($Live.vm.id -ine $identity.id -or $Live.subscriptionId -ine $identity.subscriptionId -or
+        $Live.tenantId -ine $Plan.tenantId -or $Live.fingerprint -cne $ExpectedFingerprint -or
+        (Get-ConfigurationFingerprint $Live) -cne $ExpectedFingerprint) { throw 'Reconciliation identity or expected fingerprint mismatch.' }
+    $initialProvisioning = @($Live.instanceView.statuses | Where-Object { $_.code -like 'ProvisioningState/*' })
+    $initialPower = @($Live.instanceView.statuses | Where-Object { $_.code -like 'PowerState/*' })
+    if ($initialProvisioning.Count -ne 1 -or $initialPower.Count -ne 1 -or
+        $initialProvisioning[0].code -isnot [string] -or $initialPower[0].code -isnot [string] -or
+        $initialPower[0].code -cne 'PowerState/running' -or
+        $initialProvisioning[0].code -cnotin @('ProvisioningState/succeeded','ProvisioningState/updating')) {
+        throw 'Failed, unknown, duplicate or missing initial reconciliation status; no promotion.'
+    }
+    $collectionPath = "$ObservationPath.$([guid]::NewGuid().ToString('N'))"
+    # Guest evidence and initial raw observations stay unchanged; only fresh paired ARM reads can stabilize statuses.
+    for ($attempt = 1; $attempt -le 25; $attempt++) {
+        Assert-LabWorkDeadline
+        if ([DateTimeOffset]::UtcNow -ge $deadline) { break }
+        $sample = @{ attempt = $attempt; startedAt = [DateTimeOffset]::UtcNow.ToString('o')
+            deadline = $deadline.ToString('o'); vmId = $identity.id }
+        $samplePath = "$collectionPath.sample-$('{0:D2}' -f $attempt).json"
+        Write-UpgradeJson $sample $samplePath
+        $sample.modelReadStartedAt = [DateTimeOffset]::UtcNow.ToString('o')
+        $model = Invoke-ArmRead $identity.id '2024-07-01' -Deadline $deadline
+        $sample.model = $model
+        $sample.modelObservedAt = [DateTimeOffset]::UtcNow.ToString('o')
+        Write-UpgradeJson $sample $samplePath
+        Assert-LabWorkDeadline
+        if ([DateTimeOffset]::UtcNow -ge $deadline) { throw 'Reconciliation read returned beyond its deadline; no promotion.' }
+        $sample.instanceReadStartedAt = [DateTimeOffset]::UtcNow.ToString('o')
+        $instance = Invoke-ArmRead "$($identity.id)/instanceView" '2024-07-01' -Deadline $deadline
+        $sample.instanceView = $instance
+        $sample.instanceObservedAt = [DateTimeOffset]::UtcNow.ToString('o')
+        Write-UpgradeJson $sample $samplePath
+        Assert-LabWorkDeadline
+        if ([DateTimeOffset]::UtcNow -ge $deadline) { throw 'Reconciliation read returned beyond its deadline; no promotion.' }
+        if ($model.id -ine $identity.id) { throw 'Fresh reconciliation model identity mismatch.' }
+        $fresh = @{} + $Live
+        $fresh.vm = Get-BoundedVmModel $model
+        $fresh.instanceView = @{
+            statuses = @($instance.statuses); vmAgent = $instance.vmAgent
+            diskStatuses = @($instance.disks | ForEach-Object { @{ name = $_.name; statuses = $_.statuses } })
+        }
+        $fresh.fingerprint = Get-ConfigurationFingerprint $fresh
+        $fresh.reconciliationStatusObservation = $sample
+        Assert-UpgradeSecurityPreserved $Plan.evidence $fresh
+        if ($fresh.vm.hardwareProfile.vmSize -cne $Plan.targetSize -or
+            $fresh.vm.storageProfile.diskControllerType -cne $Plan.targetController -or
+            $fresh.fingerprint -cne $ExpectedFingerprint) { throw 'Fresh reconciliation configuration drift; no promotion.' }
+        $provisioning = @($instance.statuses | Where-Object { $_.code -like 'ProvisioningState/*' })
+        $power = @($instance.statuses | Where-Object { $_.code -like 'PowerState/*' })
+        if ($provisioning.Count -ne 1 -or $power.Count -ne 1 -or
+            $provisioning[0].code -isnot [string] -or $power[0].code -isnot [string] -or
+            $power[0].code -cne 'PowerState/running') {
+            throw 'Missing, duplicate or nonrunning reconciliation status; no promotion.'
+        }
+        $modelState = $model.properties.provisioningState
+        $instanceState = $provisioning[0].code
+        if ($modelState -isnot [string]) { throw 'Missing or ambiguous model provisioning state; no promotion.' }
+        Assert-LabWorkDeadline
+        if ([DateTimeOffset]::UtcNow -ge $deadline) { throw 'Reconciliation validation exceeded its deadline; no promotion.' }
+        if ($modelState -ceq 'Succeeded' -and $instanceState -ceq 'ProvisioningState/succeeded') { return $fresh }
+        if ($modelState -cnotin @('Succeeded','Updating') -or
+            $instanceState -cnotin @('ProvisioningState/succeeded','ProvisioningState/updating') -or
+            ($modelState -cne 'Updating' -and $instanceState -cne 'ProvisioningState/updating')) {
+            throw 'Failed or unknown reconciliation provisioning state; no promotion.'
+        }
+        $remaining = ($deadline - [DateTimeOffset]::UtcNow).TotalMilliseconds
+        if ($remaining -le 0) { break }
+        Start-Sleep -Milliseconds ([int][Math]::Min(5000,[Math]::Floor($remaining)))
+    }
+    throw 'Timed out stabilizing reconciliation statuses; outcome remains unconfirmed; do not replay.'
 }
 
 function Assert-OwnerAcceptance {
@@ -431,7 +514,12 @@ function Invoke-VmUpgrade {
             $journal.reconciliationEvidence = $live
             Write-UpgradeJson $journal $journalPath
             if ($live.fingerprint -cne $journal.expectedFingerprint) { throw 'Unexpected drift during reconciliation.' }
+            $live = Get-ReconciliationTerminalEvidence $plan $live $journal.expectedFingerprint -ObservationPath "$journalPath.reconciliation-status"
+            $journal.reconciliationTerminalEvidence = $live
+            Write-UpgradeJson $journal $journalPath
+            Assert-LabWorkDeadline
             Test-PostUpgradeGuest $plan $live
+            Assert-LabWorkDeadline
             Save-UpgradePhase $journal $journalPath 'reconciled' $live
         }
         return $journal
